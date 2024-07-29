@@ -10,12 +10,14 @@ from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 from matplotlib import pyplot as plt
 
+
 class QuickPlot:
     def __init__(self, Xs, Ys, labels, xlab="x", ylab="y", title="Title"):
 
         if type(Xs) is list:
             for X, Y, label in zip(Xs, Ys, labels):
                 plt.plot(X, Y, label=label, linestyle='-')
+                plt.text( X[-1],Y[-1], f'Final = {Y[-1]*100:.2f} %', fontsize=14, ha='right', va='bottom')
         else:
             plt.plot(X, Y)
 
@@ -25,7 +27,7 @@ class QuickPlot:
 
 
         # Add a legend, grid, and show the plot
-        plt.legend()
+        plt.legend(markerscale=1.5)
         plt.grid(True)
         plt.show()
         
@@ -150,53 +152,42 @@ def prepAdult():
     test_df.columns = features
     
     
-    train_df.replace('?', np.nan, inplace=True)
-    test_df.replace('?', np.nan, inplace=True)
-    #remove any entries containing null values
-    train_df = train_df.dropna()
-    test_df = test_df.dropna()
     
+    #drop duplicate/ very skewed features
     train_df.drop(['education', 'cap-gain', 'cap-loss'], axis=1, inplace=True)
     test_df.drop(['education', 'cap-gain', 'cap-loss'], axis=1, inplace=True)
+
     
+    #remove any entries containing null values and duplicates
+    train_df.replace('?', np.nan, inplace=True)
+    test_df.replace('?', np.nan, inplace=True)
+    train_df = train_df.dropna()
+    test_df = test_df.dropna()
     train_df.drop_duplicates(inplace=True)
     test_df.drop_duplicates(inplace=True)
-
-
     
     # Remove unwanted character (.) from labels in test set
     test_df["target"] = test_df["target"].str.replace('.', '', regex=False)
     
-    '''
-    #find bins for continuous features using the train set
-    num_bins=15
-    bins_dict = {}
-    cont_features = ["age", "fnlwgt", "cap-gain", "cap-loss", "hours/week"]
-    for feature in cont_features:
-        _, bin_edges = pd.cut(train_df[feature], bins=num_bins, labels=False, retbins=True)
-        bins_dict[feature] = bin_edges
-    
-    
-    #apply the bins to the train and test set
-    for feature in cont_features:
-        train_df[feature] = pd.cut(train_df[feature], bins=bins_dict[feature], labels=False)
-        test_df[feature] = pd.cut(test_df[feature], bins=bins_dict[feature], labels=False)
-        
-    '''
 
     #one hot encode categorical features
     categorical_features = ["workclass", "marital status", "occupation", "relationship", "race", "sex", "native country"]
     combined_df = pd.concat([train_df, test_df], keys=["train", "test"])
     combined_df = pd.get_dummies(combined_df, columns = categorical_features)
-    combined_df["target"] = LabelEncoder().fit_transform(combined_df["target"])
     
+    le = LabelEncoder()
+    combined_df["target"] = le.fit_transform(combined_df["target"])
 
-    #split back into test and train, convert boolean one hots to ints
+    #split back into test and train
     train_df = combined_df.xs("train")
     test_df = combined_df.xs("test")
+    
 
-    
-    
+    # Reset index after one-hot encoding and splitting
+    train_df.reset_index(drop=True, inplace=True)
+    test_df.reset_index(drop=True, inplace=True)
+
+
     #split off the targets and features
     X_train = train_df.drop('target', axis=1).values
     Y_train = train_df['target'].values
@@ -204,9 +195,7 @@ def prepAdult():
     X_test = test_df.drop('target', axis=1).values
     Y_test = test_df['target'].values
 
-
-    #normalize only the numeric features
-
+    #normalize the numeric features
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
@@ -215,8 +204,9 @@ def prepAdult():
     return X_train, Y_train, X_test, Y_test
 
 
-def pickleDataset(X_train, Y_train, X_test, Y_test):
 
+
+def pickleDataset(X_train, Y_train, X_test, Y_test):
 
     with open("Data/Adult/train.pkl", 'wb') as file:
         pkl.dump((X_train, Y_train), file)
@@ -232,27 +222,64 @@ def accuracy(preds, ys):
     return np.sum(preds == ys) / len(preds) * 100
             
 
-def fairnessMetrics(X_train, Y_train, X_test, Y_test, model):
-    idxs = None
-    with open("Data/Adult/GenderSex.idx", 'rb') as file:
-        idxs = pkl.load(file)
-        
-    print(idxs["train"]["black male"])
+def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None):
     
-        
+    if metrics == None:
+        metrics = {
+                    "train": {
+                        "bm_acc": [],
+                        "bf_acc": [],
+                        "wm_acc": [],
+                        "wf_acc": [],
+                        "avg_acc" : [],
+                    },
+                    "test": {
+                        "bm_acc": [],
+                        "bf_acc": [],
+                        "wm_acc": [],
+                        "wf_acc": [],
+                        "avg_acc" : [],
+                    }
+                }
+                        
+    train_preds = model.thresholdedPredict(X_train)
+    test_preds = model.thresholdedPredict(X_test)
+    
+    idxs = None
+    with open("Data/Adult/groups.idx", 'rb') as file:
+        idxs = pkl.load(file)
+
+    
+
+    train_bm_acc = accuracy_score(Y_train[list(idxs["test"]["black male"])], train_preds[list(idxs["test"]["black male"])])
+    train_bf_acc = accuracy_score(Y_train[list(idxs["test"]["black female"])], train_preds[list(idxs["test"]["black female"])])
+    train_wm_acc = accuracy_score(Y_train[list(idxs["test"]["white male"])], train_preds[list(idxs["test"]["white male"])])
+    train_wf_acc = accuracy_score(Y_train[list(idxs["test"]["white female"])], train_preds[list(idxs["test"]["white female"])])
+
+    test_bm_acc = accuracy_score(Y_test[list(idxs["test"]["black male"])], test_preds[list(idxs["test"]["black male"])])
+    test_bf_acc = accuracy_score(Y_test[list(idxs["test"]["black female"])], test_preds[list(idxs["test"]["black female"])])
+    test_wm_acc = accuracy_score(Y_test[list(idxs["test"]["white male"])], test_preds[list(idxs["test"]["white male"])])
+    test_wf_acc = accuracy_score(Y_test[list(idxs["test"]["white female"])], test_preds[list(idxs["test"]["white female"])])
 
 
-        
-#do data preprocessing
+    metrics["train"]["bm_acc"].append(train_bm_acc)
+    metrics["train"]["bf_acc"].append(train_bf_acc)
+    metrics["train"]["wm_acc"].append(train_wm_acc)
+    metrics["train"]["wf_acc"].append(train_wf_acc)
+    metrics["train"]["avg_acc"].append(accuracy_score(Y_train, train_preds))
+
+    metrics["test"]["bm_acc"].append(test_bm_acc)
+    metrics["test"]["bf_acc"].append(test_bf_acc)
+    metrics["test"]["wm_acc"].append(test_wm_acc)
+    metrics["test"]["wf_acc"].append(test_wf_acc)
+    metrics["test"]["avg_acc"].append(accuracy_score(Y_test, test_preds))
+
+    return metrics
+    
+
+
 X_train, Y_train, X_test, Y_test = prepAdult()
-model = LogisticRegression(54)
-fairnessMetrics(X_train, Y_train, X_test, Y_test, model)
 #pickleDataset(X_train, Y_train, X_test, Y_test)
-
-
-
-
-
 
 '''
 #get a set of encoders for categorical features using train set
@@ -270,15 +297,64 @@ for feature, encoder in encoders.items():
 '''    
 
 
+'''
+    #get indicies of sensitve groups
+    index_dict = {
+        'test': {
+            'male_idx': np.where(test_df["sex_Male"].values)[0],
+            'female_idx': np.where(test_df["sex_Female"].values)[0],
+            'white_idx': np.where(test_df["race_White"].values)[0],
+            'black_idx': np.where(test_df["race_Black"].values)[0]
+        },
+        'train': {
+            'male_idx': np.where(train_df["sex_Male"].values)[0],
+            'female_idx': np.where(train_df["sex_Female"].values)[0],
+            'white_idx': np.where(train_df["race_White"].values)[0],
+            'black_idx': np.where(train_df["race_Black"].values)[0],
+        }
+    
+    }
+    
+    group_dict = {
+        'train': {
+            'black male': set(index_dict['train']['black_idx']).intersection(index_dict['train']['male_idx']),
+            'black female': set(index_dict['train']['black_idx']).intersection(index_dict['train']['female_idx']),
+            'white male': set(index_dict['train']['white_idx']).intersection(index_dict['train']['male_idx']),
+            'white female': set(index_dict['train']['white_idx']).intersection(index_dict['train']['female_idx'])
+        },
+        'test': {
+            'black male': set(index_dict['test']['black_idx']).intersection(index_dict['test']['male_idx']),
+            'black female': set(index_dict['test']['black_idx']).intersection(index_dict['test']['female_idx']),
+            'white male': set(index_dict['test']['white_idx']).intersection(index_dict['test']['male_idx']),
+            'white female': set(index_dict['test']['white_idx']).intersection(index_dict['test']['female_idx'])
+        }
+    }
+    
+    with open("Data/Adult/groups.idx", 'wb') as file:
+        pkl.dump(group_dict, file)
+        
+        
+
+    
+'''
 
 
 
 
+'''
+    
+    print("Number of Black Males (Train Set): " + str(len(list(idxs["train"]["black male"]))))
+    print("Number of Black Females (Train Set): " + str(len(list(idxs["train"]["black female"]))))
+    print("Number of White Males (Train Set): " + str(len(list(idxs["train"]["white male"]))))
+    print("Number of White Females (Train Set): " + str(len(list(idxs["train"]["white female"]))))
 
+    # Print the number of instances for each group in the test set
+    print("Number of Black Males (Test Set): " + str(len(list(idxs["test"]["black male"]))))
+    print("Number of Black Females (Test Set): " + str(len(list(idxs["test"]["black female"]))))
+    print("Number of White Males (Test Set): " + str(len(list(idxs["test"]["white male"]))))
+    print("Number of White Females (Test Set): " + str(len(list(idxs["test"]["white female"]))))
 
-
-
-
+'''
 
 
 
@@ -348,3 +424,46 @@ for feature, encoder in encoders.items():
     
     
     '''
+    
+    
+
+'''
+    demographic_groups = {
+        'white male': (test_df['race_White'] == 1) & (test_df['sex_Male'] == 1),
+        'white female': (test_df['race_White'] == 1) & (test_df['sex_Female'] == 1),
+        'black male': (test_df['race_Black'] == 1) & (test_df['sex_Male'] == 1),
+        'black female': (test_df['race_Black'] == 1) & (test_df['sex_Female'] == 1),
+        # Add other demographic groups as needed
+    }
+    
+
+    # Create a figure with 2x2 subplots
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    axes = axes.flatten()  # Flatten the 2D array of axes to 1D for easy iteration
+    
+    for ax, (group, condition) in zip(axes, demographic_groups.items()):
+        group_df = test_df[condition]
+        total_count = len(group_df)
+        
+        if total_count == 0:
+            continue  # Skip groups with no members
+        
+        # Count the number of individuals in each class
+        class_0_count = np.sum(group_df["target"] == 0)
+        class_1_count = np.sum(group_df["target"] == 1)
+        
+        # Calculate percentages
+        sizes = [class_0_count / total_count, class_1_count / total_count]
+        labels = ['<=50k', '>50k']
+        
+        # Plot pie chart
+        ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=140)
+        ax.set_title(f'Distribution of {group}')
+    
+    # Adjust layout
+    plt.tight_layout()
+    plt.show()
+    
+
+
+'''

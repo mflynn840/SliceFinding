@@ -1,6 +1,6 @@
 import numpy as np
 from Dataset import Dataset, DataLoader
-from utils import QuickPlot, prepAdult
+from utils import QuickPlot, prepAdult, getMetrics
 from sklearn.metrics import accuracy_score
 import numpy.linalg as linalg
 import pickle as pkl
@@ -11,6 +11,22 @@ class LogisticModel:
         
         self.W = np.ones(numWeights)
         self.b = 0
+        self.metrics = {
+                    "train": {
+                        "bm_acc": [],
+                        "bf_acc": [],
+                        "wm_acc": [],
+                        "wf_acc": [],
+                        "avg_acc" : []
+                    },
+                    "test": {
+                        "bm_acc": [],
+                        "bf_acc": [],
+                        "wm_acc": [],
+                        "wf_acc": [],
+                        "avg_acc" : []
+                    }
+                }
         
     def predict(self, X):
         return self.sigmoid(np.dot(X, self.W) + self.b)
@@ -35,19 +51,15 @@ class LogisticModel:
         
         normGradDiff = linalg.norm(s1_grad - s2_grad)
         return normGradDiff
-
-    
-    
-    
         
         
-
     def trainAdult(self, epochs, lr, decay=0):
         train, test = Dataset.loadAdult()
         trainLoader, testLoader = DataLoader(train, batchSize=1000), DataLoader(test, batchSize=1)
         
-        
-        accs = []
+        X_train, Y_train = train[:]
+        X_test, Y_test = test[:]
+
         
         for epoch in range(epochs):
             for i, (xs, ys) in trainLoader:
@@ -56,31 +68,28 @@ class LogisticModel:
                 w_grad = np.dot(xs.T, errors) / len(ys)
                 b_grad = np.sum(errors) / len(ys)
 
-
                 self.W -= lr * w_grad
                 self.b -= lr * b_grad
             
-            
-            X_train, Y_train = train[:]
-            preds = self.predict(X_train)
-            error = preds - Y_train
-            
-            preds = self.thresholdedPredict(X_train)
-
-            
-            acc = accuracy_score(Y_train, preds)
-            accs.append(acc)
-            
+            metrics = getMetrics(X_train, Y_train, X_test, Y_test, self, self.metrics)
+         
         epochs = np.arange(epochs)
-        QuickPlot([epochs], [accs], ["SGD LogReg"], "Epoch", "accuracy", "Logistic Regression on Adult")
-
-
+        
+        metrics_list = [
+            metrics["test"]["bm_acc"],
+            metrics["test"]["bf_acc"],
+            metrics["test"]["wm_acc"],
+            metrics["test"]["wf_acc"],
+            metrics["test"]["avg_acc"]
+        ]   
+        
+        QuickPlot([epochs, epochs, epochs, epochs, epochs, epochs], metrics_list, ["black male (n=726)", "black female (n=685)", "white male (n=8978)", "white female (n=3987)", "average"], "Epoch", "Group Accuracy", "Test Set Accuracy on Adult")
             
 
 X_train, Y_train, X_test, Y_test = prepAdult()
 
 foo = LogisticModel(86)
-foo.trainAdult(100, .01)
+foo.trainAdult(200, .01)
 
 print(foo.GAError(X_train, Y_train, X_train, Y_train))
 
