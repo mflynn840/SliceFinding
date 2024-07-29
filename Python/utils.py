@@ -232,19 +232,21 @@ def accuracy(preds, ys):
     return np.sum(preds == ys) / len(preds) * 100
             
 
-sensitiveFeatureIndexes = {
-    "isMale" : 44,
-    "isFemale" : 43,
-    "isBlack" : 40,
-    "isWhite" : 42
-}
-
+def fairnessMetrics(X_train, Y_train, X_test, Y_test, model):
+    idxs = None
+    with open("Data/Adult/GenderSex.idx", 'rb') as file:
+        idxs = pkl.load(file)
+        
+    print(idxs["train"]["black male"])
+    
+        
 
 
         
 #do data preprocessing
 X_train, Y_train, X_test, Y_test = prepAdult()
-
+model = LogisticRegression(54)
+fairnessMetrics(X_train, Y_train, X_test, Y_test, model)
 #pickleDataset(X_train, Y_train, X_test, Y_test)
 
 
@@ -268,6 +270,25 @@ for feature, encoder in encoders.items():
 '''    
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 '''
     #get indexes of sensitve groups
     index_dict = {
@@ -288,5 +309,42 @@ for feature, encoder in encoders.items():
     
     with open("Data/Adult/senstiveAttr.idx", 'wb') as file:
         pkl.dump(index_dict, file)
+        
+        idxs = None
+    with open("Data/Adult/senstiveAttr.idx", 'rb') as file:
+        idxs = pkl.load(file)
+    
+    assert( idxs != None)
+    train_male = set(idxs["train"]["male_idx"])
+    train_female = set(idxs["train"]["female_idx"])
+    train_black = set(idxs["train"]["black_idx"])
+    train_white = set(idxs["train"]["white_idx"])
+    
+    test_male = set(idxs["test"]["male_idx"])
+    test_female = set(idxs["test"]["female_idx"])
+    test_black = set(idxs["test"]["black_idx"])
+    test_white = set(idxs["test"]["white_idx"])
+    
+    
+    newDict = {
+        "train" : {
+            "black male" : train_male.intersection(train_black),
+            "black female" : train_female.intersection(train_black),
+            "white male" : train_male.intersection(train_white),
+            "white female" : train_female.intersection(train_white)
+        },
+        
+        "test" : {
+            "black male": test_male.intersection(test_black),
+            "black female": test_female.intersection(test_black),
+            "white male": test_male.intersection(test_white),
+            "white female": test_female.intersection(test_white)
+            
+        }
+    }
+    
+    with open("Data/Adult/GenderSex.idx", 'wb') as file:
+        pkl.dump(newDict, file)
+    
     
     '''

@@ -3,6 +3,8 @@ from Dataset import Dataset, DataLoader
 from utils import QuickPlot, prepAdult
 from sklearn.metrics import accuracy_score
 import numpy.linalg as linalg
+import pickle as pkl
+
 
 class LogisticModel:
     def __init__(self, numWeights):
@@ -34,6 +36,7 @@ class LogisticModel:
         normGradDiff = linalg.norm(s1_grad - s2_grad)
         return normGradDiff
 
+    
     
     
         
