@@ -270,6 +270,27 @@ def pickleDataset(X_train, Y_train, X_test, Y_test):
         pkl.dump((X_test, Y_test), file)
         
 
+def calculate_proportions(preds):
+    """ Calculate the proportions of each class for the given indices """
+    num_zeros = np.sum(preds == 0)
+    num_ones = np.sum(preds == 1)
+    total = num_zeros + num_ones
+    
+    return [num_zeros/total, num_ones/total]
+
+def plot_pie_chart(proportions, title):
+    """ Plot a pie chart for the given proportions """
+
+    
+    proportions = pd.Series(proportions)
+
+    labels = ['<=50k', '>50k']
+    # Replace index with new labels
+    proportions.index = labels
+    plt.figure(figsize=(8, 6))
+    plt.pie(proportions, labels=proportions.index, autopct='%1.1f%%', startangle=140)
+    plt.title(title)
+    plt.show()
             
 
 def accuracy(preds, ys):
@@ -277,7 +298,7 @@ def accuracy(preds, ys):
     return np.sum(preds == ys) / len(preds) * 100
             
 
-def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None):
+def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None, last=False):
     
     if metrics == None:
         metrics = {
@@ -311,6 +332,18 @@ def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None):
     idxs = None
     with open("Data/Adult/groups.idx", 'rb') as file:
         idxs = pkl.load(file)
+        
+    
+    if last:
+        # Calculate proportions for each group in train and test sets
+        for group in ["black male", "black female", "white male", "white female"]:
+            train_idxs = idxs["train"][group]
+            test_idxs = idxs["test"][group]
+            
+
+            # Calculate and plot proportions for test set
+            test_proportions = calculate_proportions(test_preds[list(test_idxs)])
+            plot_pie_chart(test_proportions, f'Model predictions (Test set) - {group.capitalize()}')
 
     
     #group accuracy scores

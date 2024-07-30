@@ -84,7 +84,7 @@ class LogisticModel:
             metrics = getMetrics(X_train, Y_train, X_test, Y_test, self, self.metrics)
          
         epochs = np.arange(epochs)
-        
+        metrics = getMetrics(X_train, Y_train, X_test, Y_test, self, self.metrics, last=True)
         test_ga_list = [
             metrics["test"]["bm_ga"],
             metrics["test"]["bf_ga"],
