@@ -9,15 +9,21 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.preprocessing import StandardScaler
 from matplotlib import pyplot as plt
-
+from sklearn.linear_model import LinearRegression
+from scipy.stats import pearsonr
 
 class QuickPlot:
-    def __init__(self, Xs, Ys, labels, xlab="x", ylab="y", title="Title"):
+    def __init__(self, Xs, Ys, labels, xlab="x", ylab="y", title="Title", markLast=False, percent=False):
 
         if type(Xs) is list:
             for X, Y, label in zip(Xs, Ys, labels):
                 plt.plot(X, Y, label=label, linestyle='-')
-                plt.text( X[-1],Y[-1], f'Final = {Y[-1]*100:.2f} %', fontsize=14, ha='right', va='bottom')
+                
+                if markLast:
+                    if percent:
+                        plt.text( X[-1],Y[-1], f'Final = {Y[-1]*100:.2f} %', fontsize=14, ha='right', va='bottom')
+                    else:
+                        plt.text( X[-1],Y[-1], f'Final = {Y[-1]:.3f} ', fontsize=14, ha='right', va='bottom')
         else:
             plt.plot(X, Y)
 
@@ -31,7 +37,56 @@ class QuickPlot:
         plt.grid(True)
         plt.show()
         
-        
+
+
+def regressionGraph(x1, x2, groupName, ss):
+    
+    #x1 is accuracy
+    x1 = np.array(x1).reshape(-1, 1)
+    x2 = np.array(x2)
+    
+    model = LinearRegression()
+    model.fit(x1,x2)
+    
+
+    # Predict values
+    x1_pred = np.linspace(min(x1), max(x1), 100).reshape(-1, 1)
+    x2_pred = model.predict(x1_pred)
+
+    # Compute Pearson correlation coefficient
+    r, _ = pearsonr(x1.flatten(), x2)
+
+    # Get slope and intercept
+    slope = model.coef_[0]
+    intercept = model.intercept_
+    # Plot the data and the regression line
+    plt.figure(figsize=(8, 6))
+    plt.scatter(x1, x2, color='blue', label='Data points')
+    plt.plot(x1_pred, x2_pred, color='red', linestyle='--', label='Regression line')
+
+    # Annotate Pearson correlation coefficient, slope, and intercept inside the plot area
+    plt.annotate(f'Pearson r = {r:.2f}\nSlope = {slope:.2f}\nIntercept = {intercept:.2f}', 
+                 xy=(0.1, 0.9), 
+                 xycoords='axes fraction', 
+                 fontsize=14, 
+                 ha='left', 
+                 va='top', 
+                 color='red',
+                 bbox=dict(facecolor='white', alpha=0.5, edgecolor='none'))
+    
+    
+    # Add labels and title
+    plt.xlabel('Group Accuracy')
+    plt.ylabel('Group GA error')
+    plt.title(groupName + " Accuracy vs. GA error (" + ss + " set)")
+    plt.legend()
+    plt.grid(True)
+
+    # Show the plot
+    plt.show()
+
+    
+          
 def visualizeAdult(path = "Data/Adult/adult.data"):
     #get a dataframe of the datasets csv file
     features = ["age", "workclass", "fnlwgt", "education", "education-num", "marital status", "occupation",
@@ -227,18 +282,26 @@ def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None):
     if metrics == None:
         metrics = {
                     "train": {
-                        "bm_acc": [],
-                        "bf_acc": [],
-                        "wm_acc": [],
-                        "wf_acc": [],
-                        "avg_acc" : [],
+                        "bm_acc": [],  # Black male accuracy
+                        "bf_acc": [],  # Black female accuracy
+                        "wm_acc": [],  # White male accuracy
+                        "wf_acc": [],  # White female accuracy
+                        "bm_ga": [],   # Black male GAError
+                        "bf_ga": [],   # Black female GAError
+                        "wm_ga": [],   # White male GAError
+                        "wf_ga": [],   # White female GAError
+                        "avg_acc": []  # Average accuracy across all groups
                     },
                     "test": {
-                        "bm_acc": [],
-                        "bf_acc": [],
-                        "wm_acc": [],
-                        "wf_acc": [],
-                        "avg_acc" : [],
+                        "bm_acc": [],  # Black male accuracy
+                        "bf_acc": [],  # Black female accuracy
+                        "wm_acc": [],  # White male accuracy
+                        "wf_acc": [],  # White female accuracy
+                        "bm_ga": [],   # Black male GAError
+                        "bf_ga": [],   # Black female GAError
+                        "wm_ga": [],   # White male GAError
+                        "wf_ga": [],   # White female GAError
+                        "avg_acc": []  # Average accuracy across all groups
                     }
                 }
                         
@@ -250,30 +313,35 @@ def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None):
         idxs = pkl.load(file)
 
     
-
+    #group accuracy scores
     train_bm_acc = accuracy_score(Y_train[list(idxs["test"]["black male"])], train_preds[list(idxs["test"]["black male"])])
     train_bf_acc = accuracy_score(Y_train[list(idxs["test"]["black female"])], train_preds[list(idxs["test"]["black female"])])
     train_wm_acc = accuracy_score(Y_train[list(idxs["test"]["white male"])], train_preds[list(idxs["test"]["white male"])])
     train_wf_acc = accuracy_score(Y_train[list(idxs["test"]["white female"])], train_preds[list(idxs["test"]["white female"])])
-
     test_bm_acc = accuracy_score(Y_test[list(idxs["test"]["black male"])], test_preds[list(idxs["test"]["black male"])])
     test_bf_acc = accuracy_score(Y_test[list(idxs["test"]["black female"])], test_preds[list(idxs["test"]["black female"])])
     test_wm_acc = accuracy_score(Y_test[list(idxs["test"]["white male"])], test_preds[list(idxs["test"]["white male"])])
     test_wf_acc = accuracy_score(Y_test[list(idxs["test"]["white female"])], test_preds[list(idxs["test"]["white female"])])
-
-
     metrics["train"]["bm_acc"].append(train_bm_acc)
     metrics["train"]["bf_acc"].append(train_bf_acc)
     metrics["train"]["wm_acc"].append(train_wm_acc)
     metrics["train"]["wf_acc"].append(train_wf_acc)
     metrics["train"]["avg_acc"].append(accuracy_score(Y_train, train_preds))
-
     metrics["test"]["bm_acc"].append(test_bm_acc)
     metrics["test"]["bf_acc"].append(test_bf_acc)
     metrics["test"]["wm_acc"].append(test_wm_acc)
     metrics["test"]["wf_acc"].append(test_wf_acc)
     metrics["test"]["avg_acc"].append(accuracy_score(Y_test, test_preds))
 
+    #GA error
+    metrics["train"]["bm_ga"].append(model.GAError(X_train, Y_train, X_train[list(idxs["train"]["black male"])], Y_train[list(idxs["train"]["black male"])]))
+    metrics["train"]["bf_ga"].append(model.GAError(X_train, Y_train, X_train[list(idxs["train"]["black female"])], Y_train[list(idxs["train"]["black female"])]))
+    metrics["train"]["wm_ga"].append(model.GAError(X_train, Y_train, X_train[list(idxs["train"]["white male"])], Y_train[list(idxs["train"]["white male"])]))
+    metrics["train"]["wf_ga"].append(model.GAError(X_train, Y_train, X_train[list(idxs["train"]["white female"])], Y_train[list(idxs["train"]["white female"])]))
+    metrics["test"]["bm_ga"].append(model.GAError(X_test, Y_test, X_test[list(idxs["test"]["black male"])], Y_test[list(idxs["test"]["black male"])]))
+    metrics["test"]["bf_ga"].append(model.GAError(X_test, Y_test, X_test[list(idxs["test"]["black female"])], Y_test[list(idxs["test"]["black female"])]))
+    metrics["test"]["wm_ga"].append(model.GAError(X_test, Y_test, X_test[list(idxs["test"]["white male"])], Y_test[list(idxs["test"]["white male"])]))
+    metrics["test"]["wf_ga"].append(model.GAError(X_test, Y_test, X_test[list(idxs["test"]["white female"])], Y_test[list(idxs["test"]["white female"])]))
     return metrics
     
 
