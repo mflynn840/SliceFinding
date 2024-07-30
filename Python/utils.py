@@ -12,6 +12,7 @@ from matplotlib import pyplot as plt
 from sklearn.linear_model import LinearRegression
 from scipy.stats import pearsonr
 
+
 class QuickPlot:
     def __init__(self, Xs, Ys, labels, xlab="x", ylab="y", title="Title", markLast=False, percent=False):
 
@@ -175,21 +176,19 @@ def visualizeAdult(path = "Data/Adult/adult.data"):
     
 
 
+
+
+def pickleDataset(X_train, Y_train, X_test, Y_test, path=""):
+
+    with open(os.path.join(path, "train.pkl"), 'wb') as file:
+        pkl.dump((X_train, Y_train), file)
+
+    with open(os.path.join(path, "test.pkl"), 'wb') as file:
+        pkl.dump((X_test, Y_test), file)
         
-'''
-1. Take the CSV file for the train set and
-    a. form bins for continous features
-    b. make encoders for categorical features
 
-2. On the train and test set
-    a. apply the bins and encoders
-    b. remove null values
-
-3. seperate the labels from the data
-
-Return X_train, Y_train, X_test, Y_test
-
-'''
+        
+            
 
 def prepAdult():
     
@@ -224,6 +223,13 @@ def prepAdult():
     # Remove unwanted character (.) from labels in test set
     test_df["target"] = test_df["target"].str.replace('.', '', regex=False)
     
+    print(test_df.columns)
+    #MAKE BINS FOR
+
+
+
+
+
 
     #one hot encode categorical features
     categorical_features = ["workclass", "marital status", "occupation", "relationship", "race", "sex", "native country"]
@@ -241,6 +247,9 @@ def prepAdult():
     # Reset index after one-hot encoding and splitting
     train_df.reset_index(drop=True, inplace=True)
     test_df.reset_index(drop=True, inplace=True)
+    
+    
+    
 
 
     #split off the targets and features
@@ -256,50 +265,20 @@ def prepAdult():
     X_test = scaler.transform(X_test)
     
 
-    return X_train, Y_train, X_test, Y_test
+    return X_train, Y_train, X_test, Y_test, test_df, train_df
 
 
-
-
-def pickleDataset(X_train, Y_train, X_test, Y_test):
-
-    with open("Data/Adult/train.pkl", 'wb') as file:
-        pkl.dump((X_train, Y_train), file)
-
-    with open("Data/Adult/test.pkl", 'wb') as file:
-        pkl.dump((X_test, Y_test), file)
+def unpickleDataset(path):
+    
+    with open(path, 'wb') as file:
+        return pkl.load(file)
         
-
-def calculate_proportions(preds):
-    """ Calculate the proportions of each class for the given indices """
-    num_zeros = np.sum(preds == 0)
-    num_ones = np.sum(preds == 1)
-    total = num_zeros + num_ones
     
-    return [num_zeros/total, num_ones/total]
 
-def plot_pie_chart(proportions, title):
-    """ Plot a pie chart for the given proportions """
-
-    
-    proportions = pd.Series(proportions)
-
-    labels = ['<=50k', '>50k']
-    # Replace index with new labels
-    proportions.index = labels
-    plt.figure(figsize=(8, 6))
-    plt.pie(proportions, labels=proportions.index, autopct='%1.1f%%', startangle=140)
-    plt.title(title)
-    plt.show()
-            
-
-def accuracy(preds, ys):
-    assert(len(preds) == len(ys))
-    return np.sum(preds == ys) / len(preds) * 100
-            
 
 def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None, last=False):
     
+    #get a new metrics if one is not provided
     if metrics == None:
         metrics = {
                     "train": {
@@ -332,55 +311,61 @@ def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None, last=False
     idxs = None
     with open("Data/Adult/groups.idx", 'rb') as file:
         idxs = pkl.load(file)
-        
     
-    if last:
-        # Calculate proportions for each group in train and test sets
+    
+    acc_map = {
+        "black male" : "bm_acc",
+        "black female" : "bf_acc",
+        "white male" : "wm_acc",
+        "white female" : "wf_acc",
+    }
+    
+    ga_map = {
+        "black male" : "bm_ga",
+        "black female" : "bf_ga",
+        "white male" : "wm_ga",
+        "white female" : "wf_ga"
+    }
+    
+    
+    #get all metrics for all groups in train and test sets
+    for ss in ["test", "train"]:
+        if ss == "test":
+            cur_dat = X_test
+            cur_preds = test_preds
+            cur_truths = Y_test
+        else:
+            cur_dat = X_train
+            cur_preds = train_preds
+            cur_truths = Y_train
+            
         for group in ["black male", "black female", "white male", "white female"]:
-            train_idxs = idxs["train"][group]
-            test_idxs = idxs["test"][group]
+            group_acc = accuracy_score(cur_truths[list(idxs[ss][group])], cur_preds[list(idxs[ss][group])])
+            
+            #GA error between full dataset and current group subset
+            group_ga = model.GAError(cur_dat, cur_truths, cur_dat[list(idxs[ss][group])], Y_train[list(idxs[ss][group])])
+            metrics[ss][acc_map[group]].append(group_acc)
+            metrics[ss][ga_map[group]].append(group_ga)
             
 
-            # Calculate and plot proportions for test set
-            test_proportions = calculate_proportions(test_preds[list(test_idxs)])
-            plot_pie_chart(test_proportions, f'Model predictions (Test set) - {group.capitalize()}')
+        #get average accuracy for whole dataset
+        metrics[ss]["avg_acc"].append(accuracy_score(cur_truths, cur_preds))
 
-    
-    #group accuracy scores
-    train_bm_acc = accuracy_score(Y_train[list(idxs["test"]["black male"])], train_preds[list(idxs["test"]["black male"])])
-    train_bf_acc = accuracy_score(Y_train[list(idxs["test"]["black female"])], train_preds[list(idxs["test"]["black female"])])
-    train_wm_acc = accuracy_score(Y_train[list(idxs["test"]["white male"])], train_preds[list(idxs["test"]["white male"])])
-    train_wf_acc = accuracy_score(Y_train[list(idxs["test"]["white female"])], train_preds[list(idxs["test"]["white female"])])
-    test_bm_acc = accuracy_score(Y_test[list(idxs["test"]["black male"])], test_preds[list(idxs["test"]["black male"])])
-    test_bf_acc = accuracy_score(Y_test[list(idxs["test"]["black female"])], test_preds[list(idxs["test"]["black female"])])
-    test_wm_acc = accuracy_score(Y_test[list(idxs["test"]["white male"])], test_preds[list(idxs["test"]["white male"])])
-    test_wf_acc = accuracy_score(Y_test[list(idxs["test"]["white female"])], test_preds[list(idxs["test"]["white female"])])
-    metrics["train"]["bm_acc"].append(train_bm_acc)
-    metrics["train"]["bf_acc"].append(train_bf_acc)
-    metrics["train"]["wm_acc"].append(train_wm_acc)
-    metrics["train"]["wf_acc"].append(train_wf_acc)
-    metrics["train"]["avg_acc"].append(accuracy_score(Y_train, train_preds))
-    metrics["test"]["bm_acc"].append(test_bm_acc)
-    metrics["test"]["bf_acc"].append(test_bf_acc)
-    metrics["test"]["wm_acc"].append(test_wm_acc)
-    metrics["test"]["wf_acc"].append(test_wf_acc)
-    metrics["test"]["avg_acc"].append(accuracy_score(Y_test, test_preds))
 
-    #GA error
-    metrics["train"]["bm_ga"].append(model.GAError(X_train, Y_train, X_train[list(idxs["train"]["black male"])], Y_train[list(idxs["train"]["black male"])]))
-    metrics["train"]["bf_ga"].append(model.GAError(X_train, Y_train, X_train[list(idxs["train"]["black female"])], Y_train[list(idxs["train"]["black female"])]))
-    metrics["train"]["wm_ga"].append(model.GAError(X_train, Y_train, X_train[list(idxs["train"]["white male"])], Y_train[list(idxs["train"]["white male"])]))
-    metrics["train"]["wf_ga"].append(model.GAError(X_train, Y_train, X_train[list(idxs["train"]["white female"])], Y_train[list(idxs["train"]["white female"])]))
-    metrics["test"]["bm_ga"].append(model.GAError(X_test, Y_test, X_test[list(idxs["test"]["black male"])], Y_test[list(idxs["test"]["black male"])]))
-    metrics["test"]["bf_ga"].append(model.GAError(X_test, Y_test, X_test[list(idxs["test"]["black female"])], Y_test[list(idxs["test"]["black female"])]))
-    metrics["test"]["wm_ga"].append(model.GAError(X_test, Y_test, X_test[list(idxs["test"]["white male"])], Y_test[list(idxs["test"]["white male"])]))
-    metrics["test"]["wf_ga"].append(model.GAError(X_test, Y_test, X_test[list(idxs["test"]["white female"])], Y_test[list(idxs["test"]["white female"])]))
     return metrics
-    
+        
+
+#Load dataset and save its numpy representation to a file
+X_train, Y_train, X_test, Y_test, train_df, test_df = prepAdult()
+print(train_df.head)
 
 
-X_train, Y_train, X_test, Y_test = prepAdult()
-#pickleDataset(X_train, Y_train, X_test, Y_test)
+
+
+
+#pickleDataset(X_train, Y_train, X_test, Y_test, path="Data/Adult")
+
+
 
 '''
 #get a set of encoders for categorical features using train set

@@ -81,10 +81,14 @@ class LogisticModel:
                 self.W -= lr * w_grad
                 self.b -= lr * b_grad
             
-            metrics = getMetrics(X_train, Y_train, X_test, Y_test, self, self.metrics)
+            getMetrics(X_train, Y_train, X_test, Y_test, self, self.metrics)
          
+        self.showMetrics(epochs)
+        
+        
+    def showMetrics(self, epochs:int):
         epochs = np.arange(epochs)
-        metrics = getMetrics(X_train, Y_train, X_test, Y_test, self, self.metrics, last=True)
+        metrics = self.metrics
         test_ga_list = [
             metrics["test"]["bm_ga"],
             metrics["test"]["bf_ga"],
@@ -114,7 +118,7 @@ class LogisticModel:
             metrics["train"]["wf_acc"],
             metrics["train"]["avg_acc"]
         ]
-        
+           
         #test set GA error vs. epoch
         #QuickPlot([epochs, epochs, epochs, epochs, epochs], test_ga_list, ["black male (n=726)", "black female (n=685)", "white male (n=8978)", "white female (n=3987)"], "Epoch", "Group GA error", "Test set GA error")
         
@@ -142,7 +146,7 @@ class LogisticModel:
 X_train, Y_train, X_test, Y_test = prepAdult()
 
 foo = LogisticModel(86)
-foo.trainAdult(200, .01)
+foo.trainAdult(20, .01)
 
 print(foo.GAError(X_train, Y_train, X_train, Y_train))
 
