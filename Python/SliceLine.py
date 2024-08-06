@@ -289,11 +289,11 @@ class SliceFinder:
         #create combined slices by converting I to row column index pairs
         nr, nc = I.shape
         rows, cols = np.where(I)
-        indicies = np.vstack((rows, cols)).T
+        indices = np.vstack((rows, cols)).T
         
         #form row index matrix (rix) and remove empty rows
-        rix = np.zeros((len(indicies), nr*nc), dtype = int)
-        for i, (row, col) in enumerate(indicies):
+        rix = np.zeros((len(indices), nr*nc), dtype = int)
+        for i, (row, col) in enumerate(indices):
             rix[i, row*nr + col] = 1
         
         #remove empty rows in rix
@@ -319,7 +319,7 @@ class SliceFinder:
         ids = np.sum(combined_slices * scale, axis=1)
         
         unique_ids, indices = np.unique(ids, return_index=True)
-        deduplicated_slices =combined_slices[indicies]
+        deduplicated_slices =combined_slices[indices]
         
         #step 6: candidate pruning
         ss_bound = 1.np.max(deduplicated_slices @ (1 / ss.T), axis=0)
