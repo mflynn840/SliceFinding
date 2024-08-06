@@ -215,12 +215,122 @@ class SliceFinder:
         
         
 
-    def prune(slice):
+    '''
+    
+        S: a set of slices from last iteration
+        R: stastics where R[:, 4] is the sizes of slices and R[:, 2] are slice sizes
+    
+        Our implementation has 4 steps
+        1. prune invalid input slices using thresholds for size (sigma) and error (non-negative)
+            a) S = removeEmpty(S * (R[:, 4]>= sigma and R[:, 2] > 0))
+            Reduces the input size of the pair generation
+            Does not jeopardize overall pruning because we handle missing parents
+            
+        2. join compatable slices via a self join on S
+            a) I = upper.tri((S hadmard S.T) = (L-2), values=True)
+            -We are comparing the matmul output with L-2 to ensure compatability
+            -eg) L-2=1 matches for level L=3 which checks that ab and ac have 1 item overlap to form abc
+            -get upper traingle because S hadmard S.T is symetric
+            
+        3. Create combined slices by converting I to row-column index pairs and get extraction matricies P1 and P2
+            - rix = matrix(I * seq(1, nr), nr*nc, 1)
+            - rix = removeEmpty(target=rix, margin="rows")
+            - P1 = table(seq(1, nrow(rix)), rix, nrow(rix), nrow(S)) 
+            
+            -Merge the combined slices via P = ((P1 hadmard S) + P2 hadmard S)) != 0
+            -extract combined sizes ss, total errors se, maximinum errors sm as the minimum of parent slices with
+            ss = min(p1 hadmard R[:, 4], P2 hadmard R[:, 4])
+            
+        4. Discard invalid slices with multiple assignments per feature using feature offsets fb and fe
         
-        return slice
-        #select features satsiying ss0 >= sigma and se0 > 0
-        #return np.where(self.ss0 >= sigma(
-        #) self.sigma and SE > )
+            -with fb and fe, scan over P and check that I = I AND (rowSums(P[:,:]) <=1)
+            for each original feature and retain only rows in P where no feature assignment is violated
+            
+        5. We now have valid slices for level L but there are duplicates.  Multiple parents create good pruning but exponentially increasing redudancy
+            -use deduplication via slice ids
+            -interpret one hot vectors as binary integers makes for overflow
+            -Instead the id for slices is determined using dom=fe-fb+1 and compute ids like an ND-array index
+            -scan over P and compute the sum of feature contributions by ID = ID + scale * rowIndexMax(P[:,:] * rowMaxs(P[:][:])) where scale is the feature entry from cumprod(dom)
+            
+            -duplicate slices now map to the same id and can be eliminated
+            -domain can be large so we tranforms ids via frame recoding to consecutive integers
+            -for pruning and deduplication we matrialize hte mapping as
+                -M = table(ID, seq(1, nrow(P)))
+                -deduplicate using P=M hadmard P
+            
+        6. Candidate pruning
+            -before the final deduplication, apply all pruning techniques from section 3.2 with respect to all parents of a slice
+            -compute the upper bound slice sizes, errors and sm (minimum of all parents), and number of parents np as
+            -ss.bound = 1/rowMaxs(M * (1/ss.T))
+            -np = rowSms((m hadmard (P1 + P2)) != 0)
+            
+            -minimize by maximizing the recirical (replacing infinity with 0)
+            -accounting only existing parents while avoiding large dense intermediates
+            
+            Equation 3 computes the upper bound scores and all pruning becomes a simple filter over M
+            
+            M = M * (ss.bound > sigma and sc.bound > sck and sc.bound >=0 and np=L)
+            
+            -discard empty rows in M to get M'
+            -deduplicate slices with S = M' hadmard P
+                -S = P[,rowIndexMax(M')]
+            return S as the new slice cnadidates
+    
+    '''
+    def getPairCandidates(self, S, R, TS, TR, K, L, e, sigma, alpha, fb, fe):
+        #1. prune invalid input slices using thresholds for size (sigma) and error (non-negative)
+        valid_slices = (R[:, 4] >= σ) & (R[:, 2] > 0)
+        S_valid = S[:, valid_slices]
+        
+        #join compatabible slices using a selfjoin on S
+        S_hadmard = np.dot(S_valid, S_valid.T)
+        I = np.triu(S_hadmard >= (L-2), k=1)
+        
+        #create combined slices by converting I to row column index pairs
+        nr, nc = I.shape
+        rows, cols = np.where(I)
+        indicies = np.vstack((rows, cols)).T
+        
+        #form row index matrix (rix) and remove empty rows
+        rix = np.zeros((len(indicies), nr*nc), dtype = int)
+        for i, (row, col) in enumerate(indicies):
+            rix[i, row*nr + col] = 1
+        
+        #remove empty rows in rix
+        rix = rix[np.any(rix, axis=1)]
+        
+        #get P1 and P2 (parents 1 and parents 2)
+        P1 = np.dot(S_valid, rix.T).T
+        P2 = np.dot(S_valid, rix.T).T 
+        
+        combined_slices = np.logical_or(np.dot(P1, S_valid), np.dot(P2, S_valid))
+        
+        #extract combined slices and errors
+        ss = np.minimum(np.dot(P1, R[:, 4]), np.dot(P2, R[:, 4]))
+        se = np.minimum(np.dot(P1, R[:, 2]), np.dot(P2, R[:, 2]))
+        sm = np.minimum(se, ss)  # Assuming sm is min of parent errors
+
+        #step 4: discard invalid slices with multiple assignments per feature
+        valid_combined_slices = np.all(combined_slices[:, np.newaxis] & (np.sum(combined_slices, axis=1) <= 1), axis=1)
+        
+        #step 5: duduplication
+        dom = fe-fb+1
+        scale = np.cumprod(dom)
+        ids = np.sum(combined_slices * scale, axis=1)
+        
+        unique_ids, indices = np.unique(ids, return_index=True)
+        deduplicated_slices =combined_slices[indicies]
+        
+        #step 6: candidate pruning
+        ss_bound = 1.np.max(deduplicated_slices @ (1 / ss.T), axis=0)
+        np_count = np.sum(deduplicated_slices @ (P1 + P2) != 0, axis=1)
+        
+        sc_bound = np.maximum(ss_bound, 0)
+        valid_candidates = (ss_bound > σ) & (sc_bound >= 0) & (np_count == L)
+        
+        final_slices = deduplicated_slices[valid_candidates]
+        return final_slices
+    
         
     def mainLoop(self):
         L = 1
