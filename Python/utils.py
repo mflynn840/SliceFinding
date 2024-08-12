@@ -11,7 +11,8 @@ from sklearn.preprocessing import StandardScaler
 from matplotlib import pyplot as plt
 from sklearn.linear_model import LinearRegression
 from scipy.stats import pearsonr
-
+import logging
+import colorlog
 
 class QuickPlot:
     def __init__(self, Xs, Ys, labels, xlab="x", ylab="y", title="Title", markLast=False, percent=False):
@@ -105,8 +106,8 @@ def visualizeAdult(path = "Data/Adult/adult.data"):
     plt.figure(figsize=(15, 10))
 
     # 1. Basic Statistics
-    print("Basic Statistics:")
-    print(df.describe(include='all'))
+    #print("Basic Statistics:")
+    #print(df.describe(include='all'))
 
     # 2. Distribution of Continuous Features
     plt.subplot(2, 2, 1)
@@ -223,7 +224,7 @@ def prepAdult():
     # Remove unwanted character (.) from labels in test set
     test_df["target"] = test_df["target"].str.replace('.', '', regex=False)
     
-    print(test_df.columns)
+    #print(test_df.columns)
     #MAKE BINS FOR
 
 
@@ -355,15 +356,53 @@ def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None, last=False
     return metrics
         
 
-#Load dataset and save its numpy representation to a file
-X_train, Y_train, X_test, Y_test, train_df, test_df = prepAdult()
-print(train_df.head)
 
+def onehotColumn(self, col):
+    unique_values = np.unique(col)
+    one_hot = np.zeros((col.size, unique_values.size))
+    for i, value in enumerate(col):
+        one_hot[i, np.where(unique_values == value)[0]] = 1
+        
+    return one_hot
+    
 
+def oneHotMatrix(self, X):
+    
+    cols = []
+    for i in range(X.shape[1]):
+        column = X[:, i]
+        encoded_column = self.onehotColumn(column)
+        cols.append(encoded_column)
+    
+    encoded_matrix = np.hstack(cols)
+    return encoded_matrix
 
+def getLogger(progName, fname):
+    
+    # Configure the logging system
+    logging.basicConfig(
+        level=logging.DEBUG,  # Set the logging level
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'  # Log message format
+    )
+    
 
+    # Create a file handler for plain text output
+    fhandler = logging.FileHandler(fname)
 
-#pickleDataset(X_train, Y_train, X_test, Y_test, path="Data/Adult")
+    # Define a formatter for the file
+    file_formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    fhandler.setFormatter(file_formatter)
+    
+    
+    #add handlers to logger
+    logger = logging.getLogger(progName)
+
+    logger.addHandler(fhandler)
+    
+    return logger
 
 
 

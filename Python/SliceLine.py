@@ -1,7 +1,7 @@
-
-from Dataset import Dataset
 import numpy as np
-from utils import prepAdult
+import pandas as pd
+from utils import prepAdult, getLogger
+from sklearn.preprocessing import OneHotEncoder
 
 
 '''
@@ -29,13 +29,12 @@ from utils import prepAdult
             Size
 '''
 
-
-
 class Slice:
     def __init__(self, idxs, error):
         self.idxs = idxs
         self.error = error
         self.size = len(idxs)
+
 
 
 #------------------------------
@@ -44,7 +43,7 @@ class Slice:
 
 class SliceFinder:
 
-    def __init__(self, X, e:list, k=1, sigma=1, alpha=1.0, L=5):
+    def __init__(self, X, e:list, k=1, sigma=1, alpha=1.0, L=5, logger=None):
         
         #Return the top k slices from D with largest score
         #e: list of errors for each datapoint
@@ -53,72 +52,28 @@ class SliceFinder:
         #L : how many levels of the lattice to prune
         
         
+        #Initilize variables
+        self.logger = logger
         self.X0 = X
         self.k = k
         self.topK = [Slice([-1],-1) for i in range(k)]
-        
-        print(self.topK)
-        
+        self.logger.debug("top k: " + str(self.topK) )
         self.errors = e
         self.sigma = sigma
         self.alpha = alpha
         self.L_max = L
         self.n, self.m = self.X0.shape[0], self.X0.shape[1]
         self.avgError = self.computeAverageError()
+        self.logger.debug("samples: " + str(self.n))
+        self.logger.debug("features: " + str(self.m))
+        self.logger.debug("avg error: " + str(self.avgError))
         
-        
-
-        print("samples: " + str(self.n))
-        print("features: " + str(self.m))
-        print("avg error: " + str(self.avgError))
-        
-        
-        self.fdom, self.fb, self.fe, self.X = self.prepareTheData()
-        self.S, self.R, self.CI = self.findAndScoreBasicSlices()
+        #do the sliceline algorithm
+        self.fdom, self.fb, self.fe, self.X = self.data_prep()
+        self.S, self.R, self.CI = self.find_score_basic_slices(self.X)
         self.TS, self.TR = self.maintainTopK(self.S, self.R, 0, 0, self.k, self.sigma)
         self.mainLoop()
-        
-    def maintainTopK(self, S, R, TS, TR, k, sigma):
-        
-        #TS is top k slices
-        #TR are the top k scores, errors and sizes
-        
-        #R["sc"] is a vector of scores for each slice
-        if len(R["sc"]) < k:
-            # If fewer scores, find all available indices and fill the rest with -1
-            top_k_indices = np.concatenate((np.argsort(R["sc"])[::-1], -np.ones(k - len(R["sc"]), dtype=int)))
-        else:
-            # Otherwise, get the indices of the top k largest scores
-            top_k_indices = np.argsort(R["sc"])[-k:][::-1]
 
-        print("top k indicies: "  + str(top_k_indices))
-        #find the slice indexes with the top k 
-        TS =None
-        TR = None
-
-        return TS, TR
-        
-                  
-
-    def onehotColumn(self, col):
-        unique_values = np.unique(col)
-        one_hot = np.zeros((col.size, unique_values.size))
-        for i, value in enumerate(col):
-            one_hot[i, np.where(unique_values == value)[0]] = 1
-            
-        return one_hot
-        
-    
-    def oneHotMatrix(self, X):
-        
-        cols = []
-        for i in range(X.shape[1]):
-            column = X[:, i]
-            encoded_column = self.onehotColumn(column)
-            cols.append(encoded_column)
-        
-        encoded_matrix = np.hstack(cols)
-        return encoded_matrix
         
             
     '''
@@ -133,31 +88,32 @@ class SliceFinder:
     '''
     
     
-    def prepareTheData(self):
+    def data_prep(self):
         
         # X0 is an n x m matrix. n samples of m features
         # Assume that the values for each feature fi is in [0-di]
         # we want to find the largest value in each columnn, this is di
         
         
-        #if X0 has 10 datapoints of 2 features then the output should be a 2x1 matrix  
-        #find the maximum value along ecah column of the dataset
+        #find the maximum value along ecah column of the dataset (domain sizes)
         fdom = np.max(self.X0, axis=0)
-        print("fdom: " + str(np.max(self.X0, axis=0)))
+        self.logger.debug("fdom: " + str(np.max(self.X0, axis=0)))
         
         #fb is the feature offsets
         fb = np.cumsum(fdom) - fdom
-        print("fb: " + str(fb))
+        self.logger.debug("fb: " + str(fb))
         
+        #fe are feature ending points
         fe = np.cumsum(fdom)
-        print("fe: " + str(fe))
+        self.logger.debug("fe: " + str(fe))
         
-        print("X0 + fb" + str(self.X0+fb))
-        X = self.oneHotMatrix(self.X0 + fb)
-        print(X.shape)
-        
-        
+        encoder = OneHotEncoder()
+        X = encoder.fit_transform(self.X0).toarray()
+        print("X: \n" + str(X)) 
         return fdom, fb, fe, X
+        
+
+    
     
     '''
         Returns
@@ -166,55 +122,57 @@ class SliceFinder:
         CI 
     
     '''
-    def findAndScoreBasicSlices(self):
+    def find_score_basic_slices(self, X):
         
-        #slice sizes for each basic slice
-        ss0 = self.X.sum(axis=0).T
+        n,m = X.shape
+        #ss0 = sizes of each basic slice are column sums
+        ss0 = X.sum(axis=0)
         print("ss0: "  + str(ss0))
         
-        #error for each slice is se0
-        self.errors = self.errors[np.newaxis, :]
-        se0 = np.sum(self.errors.T * self.X, axis=0).T
+        #se0 = error of each basic slice
+        se0 = (self.errors * X).sum(axis=0)
         print("se0" + str(se0))
         
-        #pruning indicator
-        CI = np.where((ss0 >= self.sigma) & (se0 > 0))
-        print("CI: " + str(CI))
+        sm0 = (self.errors * X).max(axis=0)
+        print("sm0: \n" + str(sm0))
         
-        #prune basic slices
+        #pruning indicator
+        CI = (ss0 >= self.sigma) & (se0 > 0)
+        print("CI: \n" + str(CI))
+
+        #prune basic slice scores and errors
         ss = ss0[CI]
         se = se0[CI]
+        sm = sm[CI]
         
-        #basic slice scores
-        sc = self.alpha * ((se/ss) / self.avgError - 1) - (1-self.alpha) * (self.n/ss - 1)
+        print("ss: \n"+ str(ss))
+        print("se: \n" + str(se))
+        
+        #select unpruned one hot slice representations of slices
+        slices = X[:,CI]
+        
+        #score slices
+        sc = self.score(ss, se, self.n)
         print("sc: " + str(sc))
         
         #statistics vector
         R = {
             "sc" : sc,
             "se" : se,
-            "ss" : ss            
+            "ss" : ss,   
+            "sm" : sm         
         }
         
 
         #slices
         # Initialize a dictionary to store indices for each slice
-        slices = {i: [] for i in range(self.X.shape[1])}
-
-        # Iterate over each feature (column)
-        for feature_index in range(self.X.shape[1]):
-            # Find indices of rows where the current column (feature) has a 1
-            indices = np.where(self.X[:, feature_index] == 1)[0]
-            # Store the indices in the dictionary
-            slices[feature_index] = indices.tolist()
-            
-        print("slices: " + str(slices))
+        
         return slices, R, CI
+    
+    def score(self, sliceSizes, sliceErrors, nrows):
+        sc = self.alpha * ((sliceErrors/sliceSizes) / self.avgError - 1) - (1-self.alpha) * (nrows/sliceSizes - 1)
+        return np.nan_to_num(sc, nan=-np.inf)
         
-        
-        
-        
-
     '''
     
         S: a set of slices from last iteration
@@ -277,42 +235,56 @@ class SliceFinder:
             return S as the new slice cnadidates
     
     '''
-    def getPairCandidates(self, S, R, TS, TR, K, L, e, sigma, alpha, fb, fe):
-        #1. prune invalid input slices using thresholds for size (sigma) and error (non-negative)
-        valid_slices = (R[:, 4] >= σ) & (R[:, 2] > 0)
-        S_valid = S[:, valid_slices]
+    def getPairCandidates(self, S, R, TS, TR, K, L, e, alpha, fb, fe):
         
-        #join compatabible slices using a selfjoin on S
-        S_hadmard = np.dot(S_valid, S_valid.T)
-        I = np.triu(S_hadmard >= (L-2), k=1)
+        #1. prune invalid input slices using thresholds for size (sigma) and error (non-negative)
+        CI = R["ss"] >= self.sigma & R["se"] > 0
+        S = S[:, CI]
+        
+        #(S ⊙ S.T)
+        SST = S * S.T
+        valid_SST = SST == L-2
+        I = np.triu(valid_SST)
+        
+        print(I)
         
         #create combined slices by converting I to row column index pairs
         nr, nc = I.shape
-        rows, cols = np.where(I)
-        indices = np.vstack((rows, cols)).T
+        rows, cols = np.nonzero(I)
+
+        seq = np.arange(1, nr+1)
+        rix = np.array([seq[row] for row in rows])
         
-        #form row index matrix (rix) and remove empty rows
-        rix = np.zeros((len(indices), nr*nc), dtype = int)
-        for i, (row, col) in enumerate(indices):
-            rix[i, row*nr + col] = 1
-        
-        #remove empty rows in rix
-        rix = rix[np.any(rix, axis=1)]
         
         #get P1 and P2 (parents 1 and parents 2)
-        P1 = np.dot(S_valid, rix.T).T
-        P2 = np.dot(S_valid, rix.T).T 
+        P1 = np.zeros((len(rows), nr))
+        P2 = np.zeros(len(cols), nc)
         
-        combined_slices = np.logical_or(np.dot(P1, S_valid), np.dot(P2, S_valid))
+        for i, row in enumerate(rows):
+            P1[i, row] = 1
+            
+        for i, col in enumerate(cols):
+            P2[i, col] = 1
         
-        #extract combined slices and errors
-        ss = np.minimum(np.dot(P1, R[:, 4]), np.dot(P2, R[:, 4]))
-        se = np.minimum(np.dot(P1, R[:, 2]), np.dot(P2, R[:, 2]))
-        sm = np.minimum(se, ss)  # Assuming sm is min of parent errors
+        print("P1: \n" + str(P1))
+        print("P2: \n" + str(P2))
+
+        #form combined slices by combining parents
+        P = (((P1 * S) + (P2 * S)) != 0)
+
+        #extract combined slices and errors as minimum of parents
+        ss = np.minimum(P1 * R["ss"], P2 * R["ss"])
+        se = np.minimum(P1 * R["se"], P2 * R["se"])
+        sm = np.minimum(P1 * R["sm"], P2 * R["sm"])
+         
 
         #step 4: discard invalid slices with multiple assignments per feature
-        valid_combined_slices = np.all(combined_slices[:, np.newaxis] & (np.sum(combined_slices, axis=1) <= 1), axis=1)
-        
+            #with each pair of fb and fe we scan over P and check if
+                #I = I and (rowSums(P:,beg:end)<=1) for each feature
+                #retain only rows in P where no feature assignment is violated
+                
+                
+
         #step 5: duduplication
         dom = fe-fb+1
         scale = np.cumprod(dom)
@@ -322,7 +294,7 @@ class SliceFinder:
         deduplicated_slices =combined_slices[indices]
         
         #step 6: candidate pruning
-        ss_bound = 1.np.max(deduplicated_slices @ (1 / ss.T), axis=0)
+        ss_bound = np.max(deduplicated_slices @ (1 / ss.T), axis=0)
         np_count = np.sum(deduplicated_slices @ (P1 + P2) != 0, axis=1)
         
         sc_bound = np.maximum(ss_bound, 0)
@@ -373,7 +345,27 @@ class SliceFinder:
                 
         '''
 
+            
+    def maintainTopK(self, S, R, TS, TR, k, sigma):
+        
+        #TS is top k slices
+        #TR are the top k scores, errors and sizes
+        
+        #R["sc"] is a vector of scores for each slice
+        if len(R["sc"]) < k:
+            # If fewer scores, find all available indices and fill the rest with -1
+            top_k_indices = np.concatenate((np.argsort(R["sc"])[::-1], -np.ones(k - len(R["sc"]), dtype=int)))
+        else:
+            # Otherwise, get the indices of the top k largest scores
+            top_k_indices = np.argsort(R["sc"])[-k:][::-1]
 
+        print("top k indicies: "  + str(top_k_indices))
+        #find the slice indexes with the top k 
+        TS =None
+        TR = None
+
+        return TS, TR
+        
        
     '''
     
@@ -388,10 +380,7 @@ class SliceFinder:
         compute the scoring function
     
     '''
-    def score(self, slice:Slice):
-        avg_slice_error = sum(slice.error) / slice.size
-        return self.alpha * ((avg_slice_error / self.avgError) - 1) - ((1 - self.alpha) * self.n / slice.size)
-        
+
 
     def recursiveStep(self):
         bar=1
@@ -405,23 +394,47 @@ class SliceFinder:
 
 def testBed():
     
+
+    logger = getLogger(__name__, "test.log")
     n_rows = 2
     n_cols = 3
     #X_train, _, _, _, _, _ = prepAdult()
-    X_train = np.arange(n_rows).reshape(-1, 1) * np.ones((1, n_cols), dtype=int)
-    errors = np.random.randint(0, 10, size=(X_train.shape[0]))
+    X_train = np.arange(1, n_rows+1).reshape(-1, 1) * np.ones((1, n_cols), dtype=int)
+    errors = np.random.randint(0, 10, size=(X_train.shape[0]))[:,np.newaxis]
 
     
-    print("Xtrain: ")
-    print(X_train)
-    print("errors: ")
-    print(errors)
+    logger.debug("Xtrain: ")
+    logger.debug(X_train)
+    logger.debug("errors: ")
+    logger.debug(errors)
     
     
 
     
-    foo = SliceFinder(X_train, errors)
+    foo = SliceFinder(X_train, errors, logger=logger)
     
     
 testBed()
+
+
+
+
+'''
+        #row and column index
+        rix = pd.Series((np.arange(1, self.m+1).reshape(-1,1) @ np.ones((1,self.n))).T.flatten())
+        print(rix.shape)
+        #rix = pd.Series(np.reshape(np.arange(1, self.m+1).reshape(-1,1) @ np.ones((1,self.n)), (self.m*self.n, 1)))
+        cix = pd.Series((self.X0 + fb).flatten())
+        
+        self.logger.debug("rix: \n" + str(rix))
+        self.logger.debug("cix: \n" + str(cix))
+
+        #contingency table
+        X = pd.crosstab( rix, cix).to_numpy()
+        print(X.shape)
+        self.logger.debug("X: \n" + str(X))
+        
+        return fdom, fb, fe, X
+
+'''
     
