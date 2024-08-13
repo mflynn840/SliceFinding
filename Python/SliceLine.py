@@ -365,7 +365,7 @@ class SliceFinder:
             print("P1: \n" + str(P1))
             print("P2: \n" + str(P2))
             
-            combinedSlices = P1 + P2
+            newSlices = P1 + P2
             P = (((P1 @ S) + (P2 @ S)) != 0) * 1
             print("P: \n" + str(P))
             print(P.shape)
@@ -388,42 +388,89 @@ class SliceFinder:
             #with each pair of fb and fe we scan over P and check if
                 #I = I and (rowSums(P:,beg:end)<=1) for each feature
                 #retain only rows in P where no feature assignment is violated
-        I = np.ones((P.shape[0]))
-        print("I1: \n" + str(I))
-        print("I shape" + str(I.shape))
+        I = np.ones((P.shape[0]), dtype=bool)
+        #print("I1: \n" + str(I))
+        #print("I shape" + str(I.shape))
         
+        #find cases where a slice has more than one value assigned to the same feature
         for j in range(fb.shape[0]):
             beg = fb[j]
             end = fe[j]
-            print("beg: \n" + str(beg))
-            print("end: \n" + str(end))
+            
+            #print("beg: \n" + str(beg))
+            #print("end: \n" + str(end))
             
             rowsums = np.sum(P[:, beg:end], axis=1)
-            print("rowsums: \n" + str(rowsums))
-            print("rowsums shape: " + str(rowsums.shape))
-            I = I & (rowsums <= 1)
+            rowsums = rowsums <= 1
+            #print("rowsums: \n" + str(rowsums))
+            #print("rowsums shape" + str(rowsums.shape))
+
+            I = I & rowsums
+
         
         print("I2: \n" + str(I))
-            
+        
+        #prune out invalid slices (those with more than 1 assignment per feature)
+        newSlices = newSlices[I]
+        #print("old p shape" + str(P.shape))
+        P = P[I]
+        #print("new p shape" + str(P.shape))
+        ss = ss[I]
+        se = se[I]
+        sm = sm[I]   
+                 
 
-        #step 5: duduplication
+        #step 5: duduplication (right now we have slices for level L but there are duplicates)
         dom = fe-fb+1
-        scale = np.cumprod(dom)
-        ids = np.sum(combined_slices * scale, axis=1)
+        ids = np.zeros(P.shape[0])
         
-        unique_ids, indices = np.unique(ids, return_index=True)
-        deduplicated_slices =combined_slices[indices]
+        '''
+        We scan over P, and compute the sum of feature contributions by 
+        ID = ID + scale · rowIndexMax(P:,beg:end) · rowMaxs(P:,beg:end)
+        where scale is the feature entry from cumprod(dom)
+
+        '''
         
-        #step 6: candidate pruning
-        ss_bound = np.max(deduplicated_slices @ (1 / ss.T), axis=0)
-        np_count = np.sum(deduplicated_slices @ (P1 + P2) != 0, axis=1)
+        #get a unique id for each slice
+        ID = np.zeros((P.shape[0]))
+        print(ID.shape)
+        for j in range(dom.shape[0]):
+            beg = fb[j]
+            end = fe[j]
+            
+            max_col = np.argmax(P[:, beg:end], axis=1) + 1
+            rowsums = np.sum(P[:, beg:end], axis=1)
+            
+            #print("P: \n" + str(P[:,beg:end ]))
+            print("max_col2: \n" + str(max_col))
+            print("rowsums2: \n " + str(rowsums))
+            
+            I = max_col * rowsums
+            #print("I")
+            #print(I)
+            
+            scale = 1
+            if j < dom.shape[0]:
+                scale = np.prod(dom[j+1:])
+                
+            ID = ID + I * scale
+            
+        print("ID: \n" + str(ID))
+
+        #TODO from here on
         
-        sc_bound = np.maximum(ss_bound, 0)
-        valid_candidates = (ss_bound > σ) & (sc_bound >= 0) & (np_count == L)
+        #size pruning with rowMin-rowMax transform
         
-        final_slices = deduplicated_slices[valid_candidates]
-        return final_slices
-    
+        #error pruning
+        
+        #missing parents pruning
+        
+        #apply all pruning
+        
+        #deduplication of join outputs
+        
+        return P
+
 
     '''
         Compute TS (topk slice representations) and TR (top k slice stastics)
