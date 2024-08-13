@@ -304,7 +304,7 @@ class SliceFinder:
             return S as the new slice cnadidates
     
     '''
-    def get_pair_candidates(self, S, R, TS, TR, L, fb, fe):
+    def get_pair_candidates(self, S, R, TK, TKC, L, fb, fe):
         
         #1. prune invalid input slices using thresholds for size (sigma) and error (non-negative)
         CI = (R["ss"] >= self.sigma) & (R["se"] > 0)
@@ -412,12 +412,15 @@ class SliceFinder:
         
         #prune out invalid slices (those with more than 1 assignment per feature)
         newSlices = newSlices[I]
-        #print("old p shape" + str(P.shape))
+        print("old p shape" + str(P.shape))
         P = P[I]
-        #print("new p shape" + str(P.shape))
+
+        print("new p shape" + str(P.shape))
         ss = ss[I]
         se = se[I]
-        sm = sm[I]   
+        sm = sm[I] 
+        
+
                  
 
         #step 5: duduplication (right now we have slices for level L but there are duplicates)
@@ -456,18 +459,43 @@ class SliceFinder:
             ID = ID + I * scale
             
         print("ID: \n" + str(ID))
-
+        print("ID shape: " + str(ID.shape))
         #TODO from here on
-        
+
         #size pruning with rowMin-rowMax transform
+        map = pd.crosstab(pd.Series(ID), pd.Series(np.arange(1, P.shape[0]+1))).to_numpy()
+        ex = np.arange(1, map.shape[0]+1)
         
-        #error pruning
+        ubSizes = 1/np.max(map * (1/ex @ ss.T), axis=0)
+        ubSizes[ubSizes == np.inf] = 0
+        fSizes = ubSizes >= self.sigma
+        
+        #error pruning (using upperbound)
+        ubError = 1/np.max(map * (1/ex @ se.T))
+        ubError[ubError==np.inf] = 0
+        
+        ubMError = 1/np.max(map * (1/ ex @ sm.T))
+        ubMError[ubMError == np.inf] = 0
+        
+        ubScores = self.upperbound_score(ubSizes, ubError, ubMError)
+        TMP3 = self.analyzeTopK(TKC)
+        minsc = TMP3[["minsc"]]
+        fScores = (ubScores > minsc) & (ubScores > 0)
+        
         
         #missing parents pruning
+        numParents = np.sum((map @ newSlices) != 0)
+        fParents = (numParents == L)
+        
         
         #apply all pruning
+        map = map * (fSizes & fScores & fParents) @ np.ones(map.shape[1])
+        print("map2")
+        print(map)
         
         #deduplication of join outputs
+        Dedup = map[np.max(map) != 0,:] != 0
+        P = (Dedup @ P) != 0
         
         return P
 
