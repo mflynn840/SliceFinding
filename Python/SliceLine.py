@@ -98,7 +98,7 @@ class SliceFinder:
             
 
          
-    def mainLoop(self, X, S, R, CI, TS, TR, fb, fe):
+    def mainLoop(self, X, S, R, CI, TK, TKC, fb, fe):
         
         t0 = time.time()
         
@@ -112,22 +112,48 @@ class SliceFinder:
         while(S.shape[0] > 0 and L < self.L_max):
             L = L+1
             self.logger.info("Forming new slices for level " + str(L))
-            S = self.get_pair_candidates(S, R, TS, TR, L, fb, fe)
+            S = self.get_pair_candidates(S, R, TK, TKC, L, fb, fe)
             
             self.logger.info("Evaluating new slices")
-            R = np.zeros(self.S.shape[0], 4)
-            S2 = S[CI]
+            R = np.zeros((S.shape[0], 4))
+
             for i in range(S.shape[0]):
-                R[i] = self.eval_slices(X, self.e, S2[i].T, L)
+                R[i] = self.eval_slice(X, self.errors, S[i], L)
             
             self.logger.info("Maintain topk")
-            TS, TR = self.maintainTopK(S, R, TS, TR)
+            TK, TKC = self.maintainTopK(S, R, TK, TKC)
             
         self.logger.debug("finished in " + str(t0-time.time()))
         self.logger.debug("decoding top-k slices")
-        return self.decodeTopK(self.TS, self.fb, self.fe), TR
+        TK = self.decode_top_k(TK, fb, fe)
+        return TK, TKC
             
+    
+    def decode_top_k(self, TK, fb, fe):
+        R = np.ones((TK.shape[0], TK.shape[1]))
+        
+        if TK.shape[0] > 0:
+            for j in range(1, len(fb)):
+                beg =fb[j]
+                end = fe[j]
+                
+                sub_TK = TK[:, beg:end]
+                I = np.sum(sub_TK, axis=0) * np.argmax(sub_TK, axis=1) 
+                R[:,j] = I
+                
+        return R
+                 
 
+    def eval_slice(self, X, e, tS, l, alpha):
+        I = (X @ tS) == 1
+        ss = np.sum(I, axis=1)
+        se = (e.T @ I).T
+        sm = np.sum(I * (e @ np.ones((1, I.shape[1]))))
+        
+        sc = self.score(ss, se, X.shape[0])
+        R = np.vstack((sc, se, sm, ss)).T
+        return R
+    
     '''
         Data Prep (SliceLine):
             1. Find domains for each feature
@@ -151,7 +177,7 @@ class SliceFinder:
         
         encoder = OneHotEncoder()
         X = encoder.fit_transform(self.X0).toarray()
-        print("X: \n" + str(X)) 
+        #print("X: \n" + str(X)) 
         return fdom, fb, fe, X
       
       
@@ -234,7 +260,8 @@ class SliceFinder:
         self.logger.debug("sc: \n" + str(sc))
         
         #statistics vector
-        R = np.vstack((sc, se, sm, ss))
+        R = np.vstack((sc, se, sm, ss)).T
+        
 
         return slices, R, CI
     
@@ -315,9 +342,12 @@ class SliceFinder:
     def get_pair_candidates(self, S, R, TK, TKC, L, fb, fe):
         
         #1. prune invalid input slices using thresholds for size (sigma) and error (non-negative)
-        CI = (R[3] >= self.sigma) & (R[1] > 0)
+        CI = (R[:, 3] >= self.sigma) & (R[:, 1] > 0)
         #print("CI: " + str(CI))
-        S = S[:, CI]
+        S = S[CI]
+        
+        #print("pruned S")
+        #print(S)
         
 
         #(S ⊙ S.T) creates every possible combination of slices
@@ -384,9 +414,9 @@ class SliceFinder:
 
         
         #extract combined slice sizes and errors as minimum of parents
-        se = np.minimum(P1 @ R[1], P2 @ R[1])
-        sm = np.minimum(P1 @ R[2], P2 @ R[2])
-        ss = np.minimum(P1 @ R[3], P2 @ R[3])
+        se = np.minimum(P1 @ R[:, 1], P2 @ R[:, 1])
+        sm = np.minimum(P1 @ R[:, 2], P2 @ R[:, 2])
+        ss = np.minimum(P1 @ R[:, 3], P2 @ R[:, 3])
         
         
         #print("ss: \n" + str(ss))
@@ -500,7 +530,7 @@ class SliceFinder:
         #score pruning using upper bound
         ubScores = self.upperbound_score(ubSizes, ubError, ubMError, self.sigma, self.alpha, self.avgError, self.n2)
         TMP3 = self.analyze_topK(TKC)
-        minsc = TMP3[["minsc"]]
+        minsc = TMP3["minScore"]
         fScores = (ubScores > minsc) & (ubScores > 0)
         
         
@@ -515,8 +545,9 @@ class SliceFinder:
         print(map)
         
         #deduplication of join outputs
-        Dedup = map[np.max(map) != 0,:] != 0
-        P = (Dedup @ P) != 0
+        dedup = map[np.max(map, axis=0) != 0,:] != 0
+        print(dedup)
+        P = (dedup @ P) != 0
         
         return P
     
@@ -524,16 +555,16 @@ class SliceFinder:
         maxScore = -np.inf
         minScore = -np.inf
         
-        print("TKC")
-        print(TKC)
+        #print("TKC")
+        #print(TKC)
         if TKC.shape[0] > 0:
             maxScore = TKC[0,0]
-            minScore = TKC[TKC.shape[0]-1, 0]
+            minScore = TKC[0, TKC.shape[1]-1]
             
-        print("max score")
-        print(maxScore)
-        print("min score")
-        print(minScore)
+        #print("max score")
+        #print(maxScore)
+        #print("min score")
+        #print(minScore)
         
         return {"maxScore" : maxScore, "minScore" : minScore}
 
@@ -572,13 +603,6 @@ class SliceFinder:
         
         
         return sc
-
-
-    def prune_R(self, R, I):
-        new_R = {}
-        for i in ["ss", "se", "sc", "sm"]:
-            new_R[i] = R[i][I]
-        return new_R
             
     '''
         Compute TS (topk slice representations) and TR (top k slice stastics)
@@ -590,44 +614,41 @@ class SliceFinder:
         
 
         #prune on size and score
-        I = (R[0] > 0) & (R[3] >= self.sigma)
+        I = (R[:,0] > 0) & (R[:,3] >= self.sigma)
         
-        #print("I")
-        #print(I)
-        
-        R_mat = np.column_stack(list(R.values()))
-        #print("Rmat")
-        #print(R_mat)
+
         if np.sum(I) != 0:
             S = S[I]
-            R_mat = R_mat[I]
+            R = R[I]
 
             if S.shape[1] != TK.shape[1] and S.shape[1] == 1:
                 S = S.T 
                 R = R.T
                 
             #print("S \n" + str(S))
-            #print("R \n" + str(R_mat))
+            #print("R \n" + str(R))
             #print(R) 
             
             slices = np.vstack((TK, S))
-            scores = np.vstack((TKC, R_mat))
+            scores = np.vstack((TKC, R))
             
-            print("slices \n" + str(slices))
-            print("scores \n" + str(scores))
+            #print("slices \n" + str(slices))
+            #print("scores \n" + str(scores))
             
             sorted_idxs = np.argsort(scores[:, 0])
+            #print("sorted idxs")
+            #print(sorted_idxs)
             
-            print("sorted idxs" + str(sorted_idxs))
+            #print("sorted idxs" + str(sorted_idxs))
             
             top_idxs = sorted_idxs[:min(self.k, len(sorted_idxs))]
-            print("sorted idxs" + str(top_idxs))
+            #print("sorted idxs" + str(top_idxs))
             TK = slices[top_idxs, :]
             TKC = scores[top_idxs, :]
             
 
-        print("TK \n" + str(TK))
-        print("TKC \n" + str(TKC))
+        #print("TK2 \n" + str(TK))
+        #print("TKC2 \n" + str(TKC))
         return TK, TKC
         
        
