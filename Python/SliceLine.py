@@ -4,6 +4,8 @@ from utils import prepAdult, getLogger, unpickleDataset
 from sklearn.preprocessing import OneHotEncoder
 import time
 import logging
+import math
+from scipy.sparse import csr_matrix
 
 '''
     An implementation of SliceLine Fast Linear Alebra Based Slice Finding
@@ -368,11 +370,12 @@ class SliceFinder:
 
         #step 5: duduplication 
         dom = fe-fb+1
-        ids = np.zeros(P.shape[0])
+
         
         
+        self.logger.info("getting ids")
         #unique ids for each slice are the sum of weighted feature contributions
-        ID = np.zeros((P.shape[0]))
+        ID = np.zeros((P.shape[0]), dtype=object)
         for j in range(dom.shape[0]):
             beg = fb[j]
             end = fe[j]
@@ -384,23 +387,33 @@ class SliceFinder:
             scale = 1
             if j < dom.shape[0]:
                 scale = np.prod(dom[j+1:])
-                
-            ID = ID + np.float128(I) * np.float128(scale)
             
+            I = I.astype(object)
+            scale = int(scale)
+
+            ID = ID + I * scale
+            
+        self.logger.info("got ids")
 
         #size pruning by upper bounding sizes
+        
+        print("getting map")
         map = pd.crosstab(pd.Series(ID), pd.Series(np.arange(0, P.shape[0]))).to_numpy()
+
+        print("got map")
+        print("map shape: " + str(map.shape))
         ex = np.ones((map.shape[0])).reshape(-1,1)
         ubSizes = 1/np.max(map * (1/ex @ ss.T), axis=0)
         ubSizes[ubSizes == np.inf] = 0
         fSizes = ubSizes >= self.sigma
-
+        print("size pruning done")
         
         #error pruning mask
         ubError = 1/(np.max(map * (1/(ex @ se.T)), axis=0))
         ubError[ubError == np.inf] = 0
         ubMError = 1/np.max(map * (1/ (ex @ sm.T)), axis=0)
         ubMError[ubMError == np.inf] = 0.0
+        print("error pruning done")
 
         
         #score pruning mask
@@ -408,13 +421,18 @@ class SliceFinder:
         TMP3 = self.analyze_topK(TKC)
         minsc = TMP3["minScore"]
         fScores = (ubScores > minsc) & (ubScores > 0)
+        print("score pruning done")
         
         
         #missing parents pruning mask
-        numParents = np.sum((map @ newSlices) != 0)
+        sparse_map = csr_matrix(map)
+        sparse_slices = csr_matrix(newSlices)
+        result_sparse = sparse_map.dot(sparse_slices)
+        numParents = result_sparse.nnz
         fParents = (numParents == L)
+        print("parent pruning done")
         
-        
+        print("applying pruning masks")
         #combine all masks
         map = map * (fSizes & fScores & fParents) @ np.ones(map.shape[1])
 
@@ -422,7 +440,7 @@ class SliceFinder:
         #apply masks and deduplication
         dedup = map[np.max(map, axis=0) != 0,:] != 0
         P = (dedup @ P) != 0
-        
+        print("done applying pruning masks")
         #return new slices
         return P
     
@@ -594,8 +612,13 @@ def testAdult():
     logger = getLogger(__name__, "test.log")
     logger.setLevel(logging.INFO)
     X_train, _, _, _ = unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
+    np.random.seed(1)
     errors = np.random.random(size=X_train.shape[0]).reshape(-1,1)
     
+    errors_df = pd.DataFrame(errors)
+    errors_df.to_csv("./Data/Adult/dummyErrors.csv", header=True)
+    
+    sigma = max(math.ceil(0.01 * X_train.shape[0]), 8)
     sf = SliceFinder(X_train, errors, k=4, sigma=5, alpha=0.95, L=2, logger=logger, auto=False)
     sf.run()
     SliceFinder.pretty_print_results(sf.result, ["feature" + str(i) for i in range(86)])

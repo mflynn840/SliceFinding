@@ -179,13 +179,18 @@ def visualizeAdult(path = "Data/Adult/adult.data"):
 
 
 
-def pickleDataset(X_train, Y_train, X_test, Y_test, path=""):
+def pickleDataset(X_train, Y_train, X_test, Y_test, train_df, test_df, path=""):
 
     with open(os.path.join(path, "train.pkl"), 'wb') as file:
         pkl.dump((X_train, Y_train), file)
 
     with open(os.path.join(path, "test.pkl"), 'wb') as file:
         pkl.dump((X_test, Y_test), file)
+        
+    
+    train_df.to_csv(os.path.join(path, "train.csv"), header=True)
+    test_df.to_csv(os.path.join(path, "test.csv"), header=True)
+    
         
 
         
@@ -229,6 +234,9 @@ def prepAdult(num_bins=10):
     combined_df = pd.concat([train_df, test_df], keys=["train", "test"])
     combined_df = pd.get_dummies(combined_df, columns = categorical_features)
     
+    #convert all true false to be 1 and 2 to work with sliceline
+    combined_df = combined_df.map(lambda x: 1 if x is False else (2 if x is True else x))
+        
     #bin continuous features
     continuous_features = ["age", "fnlwgt", "hours/week"]
     for feature in continuous_features:
@@ -275,8 +283,13 @@ def unpickleDataset(train_path, test_path):
         
         
     
-#X_train, Y_train, X_test, Y_test, _, _ = prepAdult()
-#pickleDataset(X_train, Y_train, X_test, Y_test, "./Data/Adult")
+X_train, Y_train, X_test, Y_test, train_df, test_df = prepAdult()
+train_df.drop('target', axis=1, inplace=True)
+test_df.drop("target", axis=1, inplace=True)
+
+
+
+pickleDataset(X_train, Y_train, X_test, Y_test, train_df, test_df ,"./Data/Adult")
 
 #X1, Y1, X2, Y2 =  unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
 
