@@ -239,6 +239,9 @@ def prepAdult():
     
     le = LabelEncoder()
     combined_df["target"] = le.fit_transform(combined_df["target"])
+    
+    #bin continuous features
+    
 
     #split back into test and train
     train_df = combined_df.xs("train")
@@ -592,3 +595,8 @@ for feature, encoder in encoders.items():
 
 
 '''
+
+
+
+
+    

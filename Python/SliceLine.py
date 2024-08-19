@@ -35,11 +35,16 @@ import time
 #TODO X0 has integer encoded featrues (categorical) 1-fi our dataset does not !!!!
 #------------------------------  
 
+
+
+'''
+
+
+
+'''
 class SliceFinder:
 
     def __init__(self, X, e:list, k=1, sigma=1, alpha=1.0, L=5, logger=None, auto=True):
-        
-        #Return the top k slices from D with largest score
         #e: list of errors for each datapoint
         #sigma: size threshold for smallest allowable slice
         #alpha: score function balancing parameter
@@ -55,34 +60,48 @@ class SliceFinder:
         self.alpha = alpha
         self.n, self.m = self.X0.shape[0], self.X0.shape[1]
         self.L_max = min(L, self.m)
-        self.avgError = SliceFinder.avg_error(self.errors, self.n)
-        
-        #report results
+        self.avgError = np.sum(self.errors)/self.n
         self.logger.info("samples: " + str(self.n))
         self.logger.info("features: " + str(self.m))
         self.logger.info("avg error: " + str(self.avgError))
+        
         
         
         if auto:
             self.run()
 
     
+    
     def run(self):
-        #one hot encode, feature offsets
+        #one hot encode dataset and get new feature begginings (fb) and ends (fe)
         fdom, fb, fe, X = self.data_prep()
+        
+        #new number of features
         self.n2 = X.shape[1]
         
-        #slices, stats, pruning indicator
+        #get 1-predicate slices, stats, pruning indicator
         S, R, CI = self.find_score_basic_slices(X)
         
-        #Top slices, top statistics
+        #Top slices (TS), top statistics (TR)
         TS, TR = self.maintainTopK(S, R, np.zeros((0, self.n2)), np.zeros((0,4)))
         
-        #Run sliceline
+        #Run recursive step
         self.result = self.mainLoop(X, S, R, CI, TS, TR, fb, fe)
+    
+    
+    @staticmethod
+    def pretty_print_results(result, featureNames, domainValues=None):
+        TK = result["TK"]
+        TKC = result["TKC"]
+        
+        print("TK")
+        print(TK)
         
         
         
+        
+        
+
 
          
     def mainLoop(self, X, S, R, CI, TK, TKC, fb, fe):
@@ -98,16 +117,16 @@ class SliceFinder:
         #while there are still valid slices left and 
         while(S.shape[0] > 0 and L < self.L_max):
             L = L+1
-            self.logger.info("Forming new slices for level " + str(L))
+            self.logger.info(" Forming new slices for level " + str(L))
             S = self.get_pair_candidates(S, R, TK, TKC, L, fb, fe)
             
-            self.logger.info("Evaluating new slices")
+            self.logger.info("  Evaluating new slices")
             R = np.zeros((S.shape[0], 4))
 
             for i in range(S.shape[0]):
                 R[i] = self.eval_slice(X, self.errors, S[i], L)
             
-            self.logger.info("Maintain topk")
+            self.logger.info("  Maintaing topk")
             TK, TKC = self.maintainTopK(S, R, TK, TKC)
             
         self.logger.debug("finished in " + str(time.time() - t0 ))
@@ -116,43 +135,27 @@ class SliceFinder:
         return {"TK" : TK, "TKC" : TKC}
             
     
+    '''
+        un-one hot the matrix to get slice representations from original dataset
+    '''
     def decode_top_k(self, TK, fb, fe):
         
-        print("TK")
-        print(TK)
         R = np.ones((TK.shape[0], fb.shape[0]))
-        
-        print("R")
-        print(R)
+
         
         #for each feature beg-end
         if TK.shape[0] > 0:
             for j in range(0, len(fb)):
                 beg =fb[j]
                 end = fe[j]
+
                 
-                print("beg")
-                print(beg)
-                print("end")
-                print(end)
-                
+                #find max value column using last occourace to break ties
                 sub_TK = TK[:, beg:end]
-                print("sub tk")
-                print(sub_TK)
-                
-                print("rowsums")
-                print(np.sum(sub_TK, axis=1))
-                
-                print("maxcol")
                 mask = sub_TK == np.max(sub_TK, axis=1)[:, np.newaxis]
-                #print(mask)
-                
                 maxcol = np.array([np.where(mask_r)[0][-1] for mask_r in mask])
                 maxcol[maxcol != 0] += 1
-                print(maxcol)
                 I = np.sum(sub_TK, axis=1) * maxcol
-                print("I")
-                print(I)
                 R[:, j] = I
         
         print("R")   
@@ -196,7 +199,13 @@ class SliceFinder:
         #print("X: \n" + str(X)) 
         return fdom, fb, fe, X
       
-      
+    
+    '''
+        compute count bins for an int or vector
+        
+        for ints it returns a set of bins with that ints bin set to value 1
+        for vectors it returns a set of bins where bins[i] is the number of occourances of i in the vector
+    '''
     def getCounts(self, vi, vmax):
         if type(vi) is np.int64:
             vec = np.zeros((vmax))
@@ -207,7 +216,7 @@ class SliceFinder:
             for vij in vi:
                 vec[vij] += 1
         else:
-            self.logger.error("unssupported use of getCounts")
+            self.logger.error("unsupported use of getCounts")
             exit()
                 
                 
@@ -215,7 +224,7 @@ class SliceFinder:
         
 
     '''
-    
+        one hot encode a vector v into m bins
     '''
     def expand(self, v, m=None):
         
@@ -284,7 +293,6 @@ class SliceFinder:
     
     
     '''
-    
         Apply scoring function to the current sizes errors,sizes and n
         if divide by 0 occours, turn into -inf
     
@@ -293,136 +301,60 @@ class SliceFinder:
         sc = self.alpha * ((sliceErrors/sliceSizes) / self.avgError - 1) - (1-self.alpha) * (nrows/sliceSizes - 1)
         return np.nan_to_num(sc, nan=-np.inf)
         
+
+
     '''
-    
-        S: a set of slices from last iteration
-        R: stastics where R[:, 4] is the sizes of slices and R[:, 2] are slice sizes
-    
-        Our implementation has 4 steps
-        1. prune invalid input slices using thresholds for size (sigma) and error (non-negative)
-            a) S = removeEmpty(S * (R[:, 4]>= sigma and R[:, 2] > 0))
-            Reduces the input size of the pair generation
-            Does not jeopardize overall pruning because we handle missing parents
-            
-        2. join compatable slices via a self join on S
-            a) I = upper.tri((S hadmard S.T) = (L-2), values=True)
-            -We are comparing the matmul output with L-2 to ensure compatability
-            -eg) L-2=1 matches for level L=3 which checks that ab and ac have 1 item overlap to form abc
-            -get upper traingle because S hadmard S.T is symetric
-            
-        3. Create combined slices by converting I to row-column index pairs and get extraction matricies P1 and P2
-            - rix = matrix(I * seq(1, nr), nr*nc, 1)
-            - rix = removeEmpty(target=rix, margin="rows")
-            - P1 = table(seq(1, nrow(rix)), rix, nrow(rix), nrow(S)) 
-            
-            -Merge the combined slices via P = ((P1 hadmard S) + P2 hadmard S)) != 0
-            -extract combined sizes ss, total errors se, maximinum errors sm as the minimum of parent slices with
-            ss = min(p1 hadmard R[:, 4], P2 hadmard R[:, 4])
-            
-        4. Discard invalid slices with multiple assignments per feature using feature offsets fb and fe
-        
-            -with fb and fe, scan over P and check that I = I AND (rowSums(P[:,:]) <=1)
-            for each original feature and retain only rows in P where no feature assignment is violated
-            
-        5. We now have valid slices for level L but there are duplicates.  Multiple parents create good pruning but exponentially increasing redudancy
-            -use deduplication via slice ids
-            -interpret one hot vectors as binary integers makes for overflow
-            -Instead the id for slices is determined using dom=fe-fb+1 and compute ids like an ND-array index
-            -scan over P and compute the sum of feature contributions by ID = ID + scale * rowIndexMax(P[:,:] * rowMaxs(P[:][:])) where scale is the feature entry from cumprod(dom)
-            
-            -duplicate slices now map to the same id and can be eliminated
-            -domain can be large so we tranforms ids via frame recoding to consecutive integers
-            -for pruning and deduplication we matrialize hte mapping as
-                -M = table(ID, seq(1, nrow(P)))
-                -deduplicate using P=M hadmard P
-            
-        6. Candidate pruning
-            -before the final deduplication, apply all pruning techniques from section 3.2 with respect to all parents of a slice
-            -compute the upper bound slice sizes, errors and sm (minimum of all parents), and number of parents np as
-            -ss.bound = 1/rowMaxs(M * (1/ss.T))
-            -np = rowSms((m hadmard (P1 + P2)) != 0)
-            
-            -minimize by maximizing the recirical (replacing infinity with 0)
-            -accounting only existing parents while avoiding large dense intermediates
-            
-            Equation 3 computes the upper bound scores and all pruning becomes a simple filter over M
-            
-            M = M * (ss.bound > sigma and sc.bound > sck and sc.bound >=0 and np=L)
-            
-            -discard empty rows in M to get M'
-            -deduplicate slices with S = M' hadmard P
-                -S = P[,rowIndexMax(M')]
-            return S as the new slice cnadidates
-    
+        Form a set of valid L-predicate slices using the given L-1 predicate slices S
     '''
     def get_pair_candidates(self, S, R, TK, TKC, L, fb, fe):
         
         #1. prune invalid input slices using thresholds for size (sigma) and error (non-negative)
         CI = (R[:, 3] >= self.sigma) & (R[:, 1] > 0)
-        #print("CI: " + str(CI))
         S = S[CI]
-        
-        #print("pruned S")
-        #print(S)
-        
 
         #(S ⊙ S.T) creates every possible combination of slices
         SST = S @ S.T
-        #print("SST: \n" + str(SST))
-        
+
+
         #valid slices should have L-2 overlap
-        #at level L=3, L-2=1 checks that ab and ac have 1 item overlap to generate abc
         valid_SST = (SST == (L-2))
         #print("valid SST: \n" + str(valid_SST))
         
+        
         #since the matrix is symetric we only need top half
+        #I is a mask for new slices with L-2 overlap
         I = np.triu(valid_SST) * valid_SST
         
-        #I is a logical matrix indicating where the upper triangular part of SST is true
-        #print("I: \n" + str(I))
-        
-        #create combined slices by converting I to row column index pairs
+
+        #create combined slices by converting I to row, column index pairs (rix and cix)
         n_rows, n_cols = I.shape
         
         #form row index matrix
         rix = np.tile(np.arange(1, n_rows+1)[:, np.newaxis], (1,n_cols))
-        #print("rix1: \n" + str(rix))
         rix = I * rix
-        #print("rix2: \n" + str(rix))
-        #flatten by going down columns instead of rowss        
         rix = rix.flatten(order="F")
-        #print("rix3: \n" + str(rix))
-        rix = rix[rix!=0]
-        #print("rix4: \n" + str(rix))
+        rix = rix[ rix!=0 ]
         rix = rix-1
         
-        
+        #column index matrix
         cix = np.tile(np.arange(1,n_cols+1), (n_rows, 1))
-        #print("cix1: \n" + str(cix))
         cix = I * cix
-        #print("cix2: \n" + str(cix))
         cix = cix.flatten(order="F")
-        #print("cix3: \n" + str(cix))
         cix = cix[cix != 0]
-        #print("cix4: \n" + str(cix))
         cix = cix-1
         
-        #print("rix shape: \n" + str(rix.shape))
-        #print("cix shape: \n" + str(cix.shape))
-        
+        #if there are new slices
         if np.sum(rix) != 0:
+            
             #get parents from row and column indicies
             P1 = self.expand(rix, S.shape[0])
             P2 = self.expand(cix, S.shape[0])
-            
-            
             #print("P1: \n" + str(P1))
             #print("P2: \n" + str(P2))
             
+            #form new slices
             newSlices = P1 + P2
             P = (((P1 @ S) + (P2 @ S)) != 0) * 1
-            #print("P: \n" + str(P))
-            #print(P.shape)
                  
         else:
             print("Error, ran out of valid slices")
@@ -433,189 +365,136 @@ class SliceFinder:
         se = np.minimum(P1 @ R[:, 1], P2 @ R[:, 1])
         sm = np.minimum(P1 @ R[:, 2], P2 @ R[:, 2])
         ss = np.minimum(P1 @ R[:, 3], P2 @ R[:, 3])
-        
-        
         #print("ss: \n" + str(ss))
         #print("se: \n" + str(se))
         #print("sm: \n" + str(sm))
 
+
+
         #step 4: discard invalid slices with multiple assignments per feature
-            #with each pair of fb and fe we scan over P and check if
-                #I = I and (rowSums(P:,beg:end)<=1) for each feature
-                #retain only rows in P where no feature assignment is violated
-        I = np.ones((P.shape[0]), dtype=bool)
-        #print("I1: \n" + str(I))
-        #print("I shape" + str(I.shape))
         
-        #find cases where a slice has more than one value assigned to the same feature
+        #indicator for valid new slices      
+        I = np.ones((P.shape[0]), dtype=bool)
+
+        #with each expanded feature (from beg-end)
         for j in range(fb.shape[0]):
             beg = fb[j]
             end = fe[j]
             
-            #print("beg: \n" + str(beg))
-            #print("end: \n" + str(end))
-            
+            #make sure it only has 1 domain value assigned to it
             rowsums = np.sum(P[:, beg:end], axis=1)
             rowsums = rowsums <= 1
-            #print("rowsums: \n" + str(rowsums))
-            #print("rowsums shape" + str(rowsums.shape))
 
+            #update mask to exclude features with more than one value
             I = I & rowsums
 
-        
-        #print("I2: \n" + str(I))
-        
-        #prune out invalid slices (those with more than 1 assignment per feature)
-        newSlices = newSlices[I]
-        #print("old p shape" + str(P.shape))
-        P = P[I]
 
-        #print("I")
-        #print(I)
-        #print("new p shape" + str(P.shape))
+        #prune slices with more than one assignment per feature
+        newSlices = newSlices[I]
+        P = P[I]
         ss = ss[I].reshape(-1,1)
         se = se[I].reshape(-1,1)
         sm = sm[I].reshape(-1,1)
-        #print("ss: \n" + str(ss))
-        #print("se: \n" + str(se))
-        #print("sm: \n" + str(sm))
-        
 
-                 
 
-        #step 5: duduplication (right now we have slices for level L but there are duplicates)
+
+        #step 5: duduplication 
         dom = fe-fb+1
         ids = np.zeros(P.shape[0])
         
-        '''
-        We scan over P, and compute the sum of feature contributions by 
-        ID = ID + scale · rowIndexMax(P:,beg:end) · rowMaxs(P:,beg:end)
-        where scale is the feature entry from cumprod(dom)
-
-        '''
         
-        #get a unique id for each slice
+        #unique ids for each slice are the sum of weighted feature contributions
         ID = np.zeros((P.shape[0]))
-        #print(ID.shape)
         for j in range(dom.shape[0]):
             beg = fb[j]
             end = fe[j]
             
             max_col = np.argmax(P[:, beg:end], axis=1) + 1
             rowsums = np.sum(P[:, beg:end], axis=1)
-            
-            #print("P: \n" + str(P[:,beg:end ]))
-            #print("max_col2: \n" + str(max_col))
-            #print("rowsums2: \n " + str(rowsums))
-            
             I = max_col * rowsums
-            #print("I")
-            #print(I)
-            
+
             scale = 1
             if j < dom.shape[0]:
                 scale = np.prod(dom[j+1:])
                 
             ID = ID + I * scale
             
-        #print("ID: \n" + str(ID))
-        #print("ID shape: " + str(ID.shape))
-        #TODO from here on
 
-        #size pruning with rowMin-rowMax transform
+        #size pruning by upper bounding sizes
         map = pd.crosstab(pd.Series(ID), pd.Series(np.arange(0, P.shape[0]))).to_numpy()
         ex = np.ones((map.shape[0])).reshape(-1,1)
         ubSizes = 1/np.max(map * (1/ex @ ss.T), axis=0)
         ubSizes[ubSizes == np.inf] = 0
         fSizes = ubSizes >= self.sigma
-        #print("ub size: \n" + str(ubSizes))
-        #print("f size: \n" + str(fSizes))
+
         
-        
-        #error pruning (using upperbound)
+        #error pruning mask
         ubError = 1/(np.max(map * (1/(ex @ se.T)), axis=0))
         ubError[ubError == np.inf] = 0
-        #print("ub errors")
-        #print(ubError)
         ubMError = 1/np.max(map * (1/ (ex @ sm.T)), axis=0)
         ubMError[ubMError == np.inf] = 0.0
-        #print("ubMError")
-        #print(ubMError)
+
         
-        
-        #score pruning using upper bound
+        #score pruning mask
         ubScores = self.upperbound_score(ubSizes, ubError, ubMError, self.sigma, self.alpha, self.avgError, self.n2)
         TMP3 = self.analyze_topK(TKC)
         minsc = TMP3["minScore"]
         fScores = (ubScores > minsc) & (ubScores > 0)
         
         
-        #missing parents pruning
+        #missing parents pruning mask
         numParents = np.sum((map @ newSlices) != 0)
         fParents = (numParents == L)
         
         
-        #apply all pruning
+        #combine all masks
         map = map * (fSizes & fScores & fParents) @ np.ones(map.shape[1])
-        print("map2")
-        print(map)
-        
-        #deduplication of join outputs
+
+
+        #apply masks and deduplication
         dedup = map[np.max(map, axis=0) != 0,:] != 0
-        print(dedup)
         P = (dedup @ P) != 0
         
+        #return new slices
         return P
     
+    
+    '''
+        find minimum and maximum score in the current topk set TKC
+        
+        returns {"maxScore" : float, "minScore": float}
+    '''
     def analyze_topK(self, TKC):
         maxScore = -np.inf
         minScore = -np.inf
         
-        #print("TKC")
-        #print(TKC)
         if TKC.shape[0] > 0:
             maxScore = TKC[0,0]
             minScore = TKC[0, TKC.shape[1]-1]
             
-        #print("max score")
-        #print(maxScore)
-        #print("min score")
-        #print(minScore)
-        
+
         return {"maxScore" : maxScore, "minScore" : minScore}
 
+
+    '''
+        upper bound slicelines scoring function by computing it at several critical points and taking the maximum
+    
+    
+    '''
 
     def upperbound_score(self, ss, se, sm, minSup, alpha, avg_error, n):
         # probe interesting points of sc in the interval [minSup, ss],
         # and compute the maximum to serve as the upper bound 
         
+        #s is the critical points we have to check
         s = np.column_stack((np.full((ss.shape[0]), minSup), np.maximum(se/sm, minSup), ss))
-        #print("S")
-        #print(s)
         ex = np.ones((3))
         smex = s*np.column_stack((sm, sm, sm))
         seex = np.column_stack((se, se, se))
         pmin = np.minimum(smex, seex)
-        #print("pmin")
-        #print(pmin)
-        
-        #print("pmin/s/avgerror-1")
-        #print(alpha*((pmin/s) / avg_error-1) )
-        
-        #print("n")
-        #print(n)
-        #print("1-alpha part")
-        #print((1-alpha) * (1/s*n - 1))
-        
-        
-        #print("pre score")
-        #print(alpha * ((pmin/s) / avg_error-1) - (1-alpha) * (1/s*n - 1))
-        
+
         sc = np.max(alpha * ((pmin/s) / avg_error-1) - (1-alpha) * (1/s*n - 1), axis=1)
         sc = np.nan_to_num(sc, nan=-np.inf)
-        
-        #print("upper bounded scores")
-        #print(sc)
         
         
         return sc
@@ -626,57 +505,48 @@ class SliceFinder:
     
     '''
     def maintainTopK(self, S, R, TK, TKC):
+        
+        self.logger.debug("Maintain topk:")
         top_k_indicies = None
         
 
         #prune on size and score
         I = (R[:,0] > 0) & (R[:,3] >= self.sigma)
         
-
+        #if there are still valid slices left
         if np.sum(I) != 0:
             S = S[I]
             R = R[I]
-
+            
+            #???
             if S.shape[1] != TK.shape[1] and S.shape[1] == 1:
                 S = S.T 
                 R = R.T
                 
-            #print("S \n" + str(S))
-            #print("R \n" + str(R))
-            #print(R) 
+            self.logger.debug(" S \n" + str(S))
+            self.logger.debug(" R \n" + str(R))
+
             
             slices = np.vstack((TK, S))
             scores = np.vstack((TKC, R))
+            self.logger.debug("slices \n" + str(slices))
+            self.logger.debug("scores \n" + str(scores))
             
-            #print("slices \n" + str(slices))
-            #print("scores \n" + str(scores))
             
+            #find new top-k slice indicies
             sorted_idxs = np.argsort(scores[:, 0])
-            #print("sorted idxs")
-            #print(sorted_idxs)
-            
-            #print("sorted idxs" + str(sorted_idxs))
-            
             top_idxs = sorted_idxs[:min(self.k, len(sorted_idxs))]
-            #print("sorted idxs" + str(top_idxs))
+            self.logger.debug("sorted idxs" + str(sorted_idxs))
+            self.logger.debug("topk idxs" + str(top_idxs))
+            
+            #update top slices and top statistics with new topk values
             TK = slices[top_idxs, :]
             TKC = scores[top_idxs, :]
             
-
-        #print("TK2 \n" + str(TK))
-        #print("TKC2 \n" + str(TKC))
+        
         return TK, TKC
         
        
-    '''
-    
-        The average dataset error is used in the scoring function
-    ''' 
-    @staticmethod
-    def avg_error(errors, n):
-        return np.sum(errors)/n
-        
-
 
 def testBed():
     
@@ -694,4 +564,67 @@ def testBed():
     
 testBed()
 
+
+'''
+
+    S: a set of slices from last iteration
+    R: stastics where R[:, 4] is the sizes of slices and R[:, 2] are slice sizes
+
+    Our implementation has 4 steps
+    1. prune invalid input slices using thresholds for size (sigma) and error (non-negative)
+        a) S = removeEmpty(S * (R[:, 4]>= sigma and R[:, 2] > 0))
+        Reduces the input size of the pair generation
+        Does not jeopardize overall pruning because we handle missing parents
+        
+    2. join compatable slices via a self join on S
+        a) I = upper.tri((S hadmard S.T) = (L-2), values=True)
+        -We are comparing the matmul output with L-2 to ensure compatability
+        -eg) L-2=1 matches for level L=3 which checks that ab and ac have 1 item overlap to form abc
+        -get upper traingle because S hadmard S.T is symetric
+        
+    3. Create combined slices by converting I to row-column index pairs and get extraction matricies P1 and P2
+        - rix = matrix(I * seq(1, nr), nr*nc, 1)
+        - rix = removeEmpty(target=rix, margin="rows")
+        - P1 = table(seq(1, nrow(rix)), rix, nrow(rix), nrow(S)) 
+        
+        -Merge the combined slices via P = ((P1 hadmard S) + P2 hadmard S)) != 0
+        -extract combined sizes ss, total errors se, maximinum errors sm as the minimum of parent slices with
+        ss = min(p1 hadmard R[:, 4], P2 hadmard R[:, 4])
+        
+    4. Discard invalid slices with multiple assignments per feature using feature offsets fb and fe
+    
+        -with fb and fe, scan over P and check that I = I AND (rowSums(P[:,:]) <=1)
+        for each original feature and retain only rows in P where no feature assignment is violated
+        
+    5. We now have valid slices for level L but there are duplicates.  Multiple parents create good pruning but exponentially increasing redudancy
+        -use deduplication via slice ids
+        -interpret one hot vectors as binary integers makes for overflow
+        -Instead the id for slices is determined using dom=fe-fb+1 and compute ids like an ND-array index
+        -scan over P and compute the sum of feature contributions by ID = ID + scale * rowIndexMax(P[:,:] * rowMaxs(P[:][:])) where scale is the feature entry from cumprod(dom)
+        
+        -duplicate slices now map to the same id and can be eliminated
+        -domain can be large so we tranforms ids via frame recoding to consecutive integers
+        -for pruning and deduplication we matrialize hte mapping as
+            -M = table(ID, seq(1, nrow(P)))
+            -deduplicate using P=M hadmard P
+        
+    6. Candidate pruning
+        -before the final deduplication, apply all pruning techniques from section 3.2 with respect to all parents of a slice
+        -compute the upper bound slice sizes, errors and sm (minimum of all parents), and number of parents np as
+        -ss.bound = 1/rowMaxs(M * (1/ss.T))
+        -np = rowSms((m hadmard (P1 + P2)) != 0)
+        
+        -minimize by maximizing the recirical (replacing infinity with 0)
+        -accounting only existing parents while avoiding large dense intermediates
+        
+        Equation 3 computes the upper bound scores and all pruning becomes a simple filter over M
+        
+        M = M * (ss.bound > sigma and sc.bound > sck and sc.bound >=0 and np=L)
+        
+        -discard empty rows in M to get M'
+        -deduplicate slices with S = M' hadmard P
+            -S = P[,rowIndexMax(M')]
+        return S as the new slice cnadidates
+
+'''
 
