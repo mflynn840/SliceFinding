@@ -124,24 +124,22 @@ class SliceFinder:
         
         R = np.ones((TK.shape[0], fb.shape[0]))
 
-        
         #for each feature beg-end
         if TK.shape[0] > 0:
             for j in range(0, len(fb)):
-                beg =fb[j]
+                beg = fb[j]
                 end = fe[j]
 
                 
-                #find max value column using last occourace to break ties
-                sub_TK = TK[:, beg:end]
-                mask = sub_TK == np.max(sub_TK, axis=1)[:, np.newaxis]
-                maxcol = np.array([np.where(mask_r)[0][-1] for mask_r in mask])
-                maxcol[maxcol != 0] += 1
+                #find the index in the expanded fature with a 1, that poisition is feature number
+                sub_TK = TK[:, beg:end]  
+                mask = np.sum(sub_TK, axis=1) > 0 
+                maxcol = np.argmax(sub_TK, axis=1)
+                maxcol[mask] += 1
                 I = np.sum(sub_TK, axis=1) * maxcol
+
                 R[:, j] = I
-        
-        #print("R")   
-        #print(R)    
+  
         return R
                  
 
@@ -268,6 +266,7 @@ class SliceFinder:
         
         #statistics vector
         R = np.vstack((sc, se, sm, ss)).T
+
 
 
         return slices, R, CI
@@ -397,23 +396,23 @@ class SliceFinder:
 
         #size pruning by upper bounding sizes
         
-        print("getting map")
+        #print("getting map")
         map = pd.crosstab(pd.Series(ID), pd.Series(np.arange(0, P.shape[0]))).to_numpy()
 
-        print("got map")
-        print("map shape: " + str(map.shape))
+        #print("got map")
+        #print("map shape: " + str(map.shape))
         ex = np.ones((map.shape[0])).reshape(-1,1)
         ubSizes = 1/np.max(map * (1/ex @ ss.T), axis=0)
         ubSizes[ubSizes == np.inf] = 0
         fSizes = ubSizes >= self.sigma
-        print("size pruning done")
+        #print("size pruning done")
         
         #error pruning mask
         ubError = 1/(np.max(map * (1/(ex @ se.T)), axis=0))
         ubError[ubError == np.inf] = 0
         ubMError = 1/np.max(map * (1/ (ex @ sm.T)), axis=0)
         ubMError[ubMError == np.inf] = 0.0
-        print("error pruning done")
+        #print("error pruning done")
 
         
         #score pruning mask
@@ -421,7 +420,7 @@ class SliceFinder:
         TMP3 = self.analyze_topK(TKC)
         minsc = TMP3["minScore"]
         fScores = (ubScores > minsc) & (ubScores > 0)
-        print("score pruning done")
+        #print("score pruning done")
         
         
         #missing parents pruning mask
@@ -430,9 +429,9 @@ class SliceFinder:
         result_sparse = sparse_map.dot(sparse_slices)
         numParents = result_sparse.nnz
         fParents = (numParents == L)
-        print("parent pruning done")
+        #print("parent pruning done")
         
-        print("applying pruning masks")
+        #print("applying pruning masks")
         #combine all masks
         map = map * (fSizes & fScores & fParents) @ np.ones(map.shape[1])
 
@@ -440,7 +439,7 @@ class SliceFinder:
         #apply masks and deduplication
         dedup = map[np.max(map, axis=0) != 0,:] != 0
         P = (dedup @ P) != 0
-        print("done applying pruning masks")
+        #print("done applying pruning masks")
         #return new slices
         return P
     
@@ -543,6 +542,10 @@ class SliceFinder:
             TKC = scores[top_idxs, :]
             
         
+        #print("TK org")
+        #print(TK)
+        #print("TKC org")
+        #print(TKC)
         return TK, TKC
         
     
@@ -551,11 +554,11 @@ class SliceFinder:
         TK = result["TK"]
         TKC = result["TKC"]
         
-        print("TK")
-        print(TK)
+        #print("TK")
+        #print(TK)
         
-        print("TKC")
-        print(TKC)
+        #print("TKC")
+        #print(TKC)
         
         count = 0
         
