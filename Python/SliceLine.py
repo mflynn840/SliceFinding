@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
-from utils import prepAdult, getLogger
+from utils import prepAdult, getLogger, unpickleDataset
 from sklearn.preprocessing import OneHotEncoder
 import time
-
+import logging
 
 '''
     An implementation of SliceLine Fast Linear Alebra Based Slice Finding
@@ -32,16 +32,10 @@ import time
 
 
 #------------------------------
-#TODO X0 has integer encoded featrues (categorical) 1-fi our dataset does not !!!!
+#TODO X0 has integer encoded featrues (categorical) 1-|fi| our dataset does not !!!!
 #------------------------------  
 
 
-
-'''
-
-
-
-'''
 class SliceFinder:
 
     def __init__(self, X, e:list, k=1, sigma=1, alpha=1.0, L=5, logger=None, auto=True):
@@ -89,21 +83,7 @@ class SliceFinder:
         self.result = self.mainLoop(X, S, R, CI, TS, TR, fb, fe)
     
     
-    @staticmethod
-    def pretty_print_results(result, featureNames, domainValues=None):
-        TK = result["TK"]
-        TKC = result["TKC"]
-        
-        print("TK")
-        print(TK)
-        
-        
-        
-        
-        
-
-
-         
+    
     def mainLoop(self, X, S, R, CI, TK, TKC, fb, fe):
         
         t0 = time.time()
@@ -158,8 +138,8 @@ class SliceFinder:
                 I = np.sum(sub_TK, axis=1) * maxcol
                 R[:, j] = I
         
-        print("R")   
-        print(R)    
+        #print("R")   
+        #print(R)    
         return R
                  
 
@@ -286,20 +266,9 @@ class SliceFinder:
         
         #statistics vector
         R = np.vstack((sc, se, sm, ss)).T
-        
+
 
         return slices, R, CI
-    
-    
-    
-    '''
-        Apply scoring function to the current sizes errors,sizes and n
-        if divide by 0 occours, turn into -inf
-    
-    '''
-    def score(self, sliceSizes, sliceErrors, nrows):
-        sc = self.alpha * ((sliceErrors/sliceSizes) / self.avgError - 1) - (1-self.alpha) * (nrows/sliceSizes - 1)
-        return np.nan_to_num(sc, nan=-np.inf)
         
 
 
@@ -314,7 +283,6 @@ class SliceFinder:
 
         #(S ⊙ S.T) creates every possible combination of slices
         SST = S @ S.T
-
 
         #valid slices should have L-2 overlap
         valid_SST = (SST == (L-2))
@@ -417,7 +385,7 @@ class SliceFinder:
             if j < dom.shape[0]:
                 scale = np.prod(dom[j+1:])
                 
-            ID = ID + I * scale
+            ID = ID + np.float128(I) * np.float128(scale)
             
 
         #size pruning by upper bounding sizes
@@ -475,6 +443,19 @@ class SliceFinder:
 
         return {"maxScore" : maxScore, "minScore" : minScore}
 
+
+
+    
+    '''
+        Apply scoring function to the current sizes errors,sizes and n
+        if divide by 0 occours, turn into -inf
+    
+    '''
+    def score(self, sliceSizes, sliceErrors, nrows):
+        sc = self.alpha * ((sliceErrors/sliceSizes) / self.avgError - 1) - (1-self.alpha) * (nrows/sliceSizes - 1)
+        return np.nan_to_num(sc, nan=-np.inf)
+    
+    
 
     '''
         upper bound slicelines scoring function by computing it at several critical points and taking the maximum
@@ -546,24 +527,81 @@ class SliceFinder:
         
         return TK, TKC
         
+    
+    @staticmethod
+    def pretty_print_results(result, featureNames, domainValues=None):
+        TK = result["TK"]
+        TKC = result["TKC"]
+        
+        print("TK")
+        print(TK)
+        
+        print("TKC")
+        print(TKC)
+        
+        count = 0
+        
+        
+        for slice in TK:
+            print("Slice " + str(count))
+            
+            print("   ----------------------------")
+            #print features
+            for j in range(len(slice)):
+                if slice[j] != 0:
+                    
+                    if domainValues == None:
+                        print("   " + str(featureNames[j] + " = " + str(slice[j])))
+                    else:
+                        print("   " + str(featureNames[j] + " = " + str(domainValues[j][slice[j]-1])))
+                        
+                    
+            #print scores
+            print("   ----------------------------")
+            print("   score: " + str(TKC[count][0]))
+            print("   avg. error: " + str(TKC[count][1]))
+            print("   max error: " + str(TKC[count][2]))
+            print("   size: " + str(TKC[count][3]))
+            
+            
+            count += 1
+            print("--------------------------------------------------")
+        
+        
+      
        
 
 def testBed():
     
-
+    #dummy data has 3 samples of 4 features where sample i has all features set to value i
+    #errors are 1,2,3
+    
     logger = getLogger(__name__, "test.log")
     n_rows = 3
     n_cols = 4
-    #X_train, _, _, _, _, _ = prepAdult()
     X_train = np.arange(1, n_rows+1).reshape(-1, 1) * np.ones((1, n_cols), dtype=int)
     errors = np.arange(1, 4).reshape(-1,1)
-    foo = SliceFinder(X_train, errors, k=4, sigma=1, alpha=0.95, L=1, logger=logger)
     
-    print("foo result")
-    print(foo.result)
+    sf = SliceFinder(X_train, errors, k=4, sigma=1, alpha=0.95, L=1, logger=logger, auto=False)
+    sf.run()
     
-testBed()
-
+    SliceFinder.pretty_print_results(sf.result, ["feature 1", "feature 2", "feature 3", "feature 4"])
+    #print("foo result")
+    #print(foo.result)
+    
+    
+def testAdult():
+    logger = getLogger(__name__, "test.log")
+    logger.setLevel(logging.INFO)
+    X_train, _, _, _ = unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
+    errors = np.random.random(size=X_train.shape[0]).reshape(-1,1)
+    
+    sf = SliceFinder(X_train, errors, k=4, sigma=5, alpha=0.95, L=2, logger=logger, auto=False)
+    sf.run()
+    SliceFinder.pretty_print_results(sf.result, ["feature" + str(i) for i in range(86)])
+    
+#testBed()
+testAdult()
 
 '''
 

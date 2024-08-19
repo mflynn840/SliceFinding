@@ -1,12 +1,13 @@
 import numpy as np
 from Dataset import Dataset, DataLoader
-from utils import QuickPlot, prepAdult, getMetrics
+from utils import QuickPlot, prepAdult, getMetrics, unpickleDataset
 from sklearn.metrics import accuracy_score
 import numpy.linalg as linalg
 import pickle as pkl
 from scipy.stats import pearsonr
 from sklearn.linear_model import LinearRegression
 from utils import regressionGraph
+from sklearn.preprocessing import StandardScaler
 
 class LogisticModel:
     def __init__(self, numWeights):
@@ -47,6 +48,18 @@ class LogisticModel:
     def thresholdedPredict(self, X):
         return (self.predict(X) > 0.5).astype(int)
     
+    def compute_loss(self, X, Y):
+
+        preds = self.predict(X)
+        
+        # avoid log(0)
+        preds = np.clip(preds, 1e-15, 1 - 1e-15)
+        
+        # binary cross-entropy loss formula
+        loss = -np.mean(Y * np.log(preds) + (1 - Y) * np.log(1 - preds))
+        
+        return loss
+    
     
     #x1/y1 is a superset of X2/y2
     def GAError(self, X1, Y1, X2, Y2):
@@ -63,7 +76,7 @@ class LogisticModel:
         return normGradDiff
         
         
-    def trainAdult(self, epochs, lr, decay=0):
+    def fit(self, X_train, Y_train, X_test, Y_test, epochs, lr, decay=0):
         train, test = Dataset.loadAdult()
         trainLoader, testLoader = DataLoader(train, batchSize=1000), DataLoader(test, batchSize=1)
         
@@ -143,12 +156,14 @@ class LogisticModel:
         #regressionGraph(metrics["test"]["wm_acc"], metrics["test"]["wm_ga"], "White Male", "test")
         #regressionGraph(metrics["test"]["wf_acc"], metrics["test"]["wf_ga"], "White Female", "test")
 
-X_train, Y_train, X_test, Y_test = prepAdult()
+def train_adult():
+    X_train, Y_train, X_test, Y_test = unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+    model = LogisticModel(86)
+    model.fit(X_train, Y_train, X_test, Y_test, 200, .01)
 
-foo = LogisticModel(86)
-foo.trainAdult(20, .01)
-
-print(foo.GAError(X_train, Y_train, X_train, Y_train))
 
     
-    
+train_adult()

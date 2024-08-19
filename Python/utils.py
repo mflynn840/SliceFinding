@@ -7,7 +7,7 @@ import seaborn as sns
 import pickle as pkl
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-from sklearn.preprocessing import StandardScaler
+
 from matplotlib import pyplot as plt
 from sklearn.linear_model import LinearRegression
 from scipy.stats import pearsonr
@@ -191,7 +191,7 @@ def pickleDataset(X_train, Y_train, X_test, Y_test, path=""):
         
             
 
-def prepAdult():
+def prepAdult(num_bins=10):
     
 
     trainpath = "Data/Adult/adult.data"
@@ -200,6 +200,7 @@ def prepAdult():
     #get a dataframe of the datasets csv file
     features = ["age", "workclass", "fnlwgt", "education", "education-num", "marital status", "occupation",
         "relationship", "race", "sex", "cap-gain", "cap-loss", "hours/week", "native country", "target"]
+    f_set = set(features)
     
     train_df = pd.read_csv(trainpath, header=None, na_values = "?", skipinitialspace=True)
     test_df = pd.read_csv(testpath, header=None, na_values = "?", skipinitialspace=True)
@@ -207,11 +208,9 @@ def prepAdult():
     test_df.columns = features
     
     
-    
     #drop duplicate/ very skewed features
     train_df.drop(['education', 'cap-gain', 'cap-loss'], axis=1, inplace=True)
     test_df.drop(['education', 'cap-gain', 'cap-loss'], axis=1, inplace=True)
-
     
     #remove any entries containing null values and duplicates
     train_df.replace('?', np.nan, inplace=True)
@@ -224,24 +223,23 @@ def prepAdult():
     # Remove unwanted character (.) from labels in test set
     test_df["target"] = test_df["target"].str.replace('.', '', regex=False)
     
-    #print(test_df.columns)
-    #MAKE BINS FOR
-
-
-
-
-
 
     #one hot encode categorical features
     categorical_features = ["workclass", "marital status", "occupation", "relationship", "race", "sex", "native country"]
     combined_df = pd.concat([train_df, test_df], keys=["train", "test"])
     combined_df = pd.get_dummies(combined_df, columns = categorical_features)
     
+    #bin continuous features
+    continuous_features = ["age", "fnlwgt", "hours/week"]
+    for feature in continuous_features:
+        combined_df[feature] = pd.cut(combined_df[feature], bins=num_bins, labels=np.arange(1,num_bins+1))
+
+        
+    #encode targets
     le = LabelEncoder()
     combined_df["target"] = le.fit_transform(combined_df["target"])
     
-    #bin continuous features
-    
+
 
     #split back into test and train
     train_df = combined_df.xs("train")
@@ -251,10 +249,6 @@ def prepAdult():
     # Reset index after one-hot encoding and splitting
     train_df.reset_index(drop=True, inplace=True)
     test_df.reset_index(drop=True, inplace=True)
-    
-    
-    
-
 
     #split off the targets and features
     X_train = train_df.drop('target', axis=1).values
@@ -263,21 +257,28 @@ def prepAdult():
     X_test = test_df.drop('target', axis=1).values
     Y_test = test_df['target'].values
 
-    #normalize the numeric features
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
-    
 
     return X_train, Y_train, X_test, Y_test, test_df, train_df
 
 
-def unpickleDataset(path):
+def unpickleDataset(train_path, test_path):
     
-    with open(path, 'wb') as file:
-        return pkl.load(file)
+    X_train, Y_train, X_test, Y_test = None, None, None, None
+    
+    with open(train_path, 'rb') as file:
+        X_train, Y_train = pkl.load(file)
+    
+    with open(test_path, 'rb') as file:
+        X_test, Y_test = pkl.load(file)
+    
+    return X_train, Y_train, X_test, Y_test
+        
         
     
+#X_train, Y_train, X_test, Y_test, _, _ = prepAdult()
+#pickleDataset(X_train, Y_train, X_test, Y_test, "./Data/Adult")
+
+#X1, Y1, X2, Y2 =  unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
 
 
 def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None, last=False):
@@ -360,25 +361,6 @@ def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None, last=False
         
 
 
-def onehotColumn(self, col):
-    unique_values = np.unique(col)
-    one_hot = np.zeros((col.size, unique_values.size))
-    for i, value in enumerate(col):
-        one_hot[i, np.where(unique_values == value)[0]] = 1
-        
-    return one_hot
-    
-
-def oneHotMatrix(self, X):
-    
-    cols = []
-    for i in range(X.shape[1]):
-        column = X[:, i]
-        encoded_column = self.onehotColumn(column)
-        cols.append(encoded_column)
-    
-    encoded_matrix = np.hstack(cols)
-    return encoded_matrix
 
 def getLogger(progName, fname):
     
@@ -407,196 +389,9 @@ def getLogger(progName, fname):
     
     return logger
 
-
-
-'''
-#get a set of encoders for categorical features using train set
-encoders = {}
-for feature in train_df.columns:
-    if train_df[feature].dtype == 'object':
-        le = LabelEncoder()
-        train_df[feature] = le.fit_transform(train_df[feature])
-        encoders[feature] = le
-
-
-#encode categorical features on test using the same encoders
-for feature, encoder in encoders.items():
-    test_df[feature] = encoder.transform(test_df[feature])
-'''    
-
-
-'''
-    #get indicies of sensitve groups
-    index_dict = {
-        'test': {
-            'male_idx': np.where(test_df["sex_Male"].values)[0],
-            'female_idx': np.where(test_df["sex_Female"].values)[0],
-            'white_idx': np.where(test_df["race_White"].values)[0],
-            'black_idx': np.where(test_df["race_Black"].values)[0]
-        },
-        'train': {
-            'male_idx': np.where(train_df["sex_Male"].values)[0],
-            'female_idx': np.where(train_df["sex_Female"].values)[0],
-            'white_idx': np.where(train_df["race_White"].values)[0],
-            'black_idx': np.where(train_df["race_Black"].values)[0],
-        }
-    
-    }
-    
-    group_dict = {
-        'train': {
-            'black male': set(index_dict['train']['black_idx']).intersection(index_dict['train']['male_idx']),
-            'black female': set(index_dict['train']['black_idx']).intersection(index_dict['train']['female_idx']),
-            'white male': set(index_dict['train']['white_idx']).intersection(index_dict['train']['male_idx']),
-            'white female': set(index_dict['train']['white_idx']).intersection(index_dict['train']['female_idx'])
-        },
-        'test': {
-            'black male': set(index_dict['test']['black_idx']).intersection(index_dict['test']['male_idx']),
-            'black female': set(index_dict['test']['black_idx']).intersection(index_dict['test']['female_idx']),
-            'white male': set(index_dict['test']['white_idx']).intersection(index_dict['test']['male_idx']),
-            'white female': set(index_dict['test']['white_idx']).intersection(index_dict['test']['female_idx'])
-        }
-    }
-    
-    with open("Data/Adult/groups.idx", 'wb') as file:
-        pkl.dump(group_dict, file)
-        
-        
+def is_one_hot(column):
+    unique_vals = np.unique(column)
+    return set(unique_vals).issubset({0,1})
 
     
-'''
 
-
-
-
-'''
-    
-    print("Number of Black Males (Train Set): " + str(len(list(idxs["train"]["black male"]))))
-    print("Number of Black Females (Train Set): " + str(len(list(idxs["train"]["black female"]))))
-    print("Number of White Males (Train Set): " + str(len(list(idxs["train"]["white male"]))))
-    print("Number of White Females (Train Set): " + str(len(list(idxs["train"]["white female"]))))
-
-    # Print the number of instances for each group in the test set
-    print("Number of Black Males (Test Set): " + str(len(list(idxs["test"]["black male"]))))
-    print("Number of Black Females (Test Set): " + str(len(list(idxs["test"]["black female"]))))
-    print("Number of White Males (Test Set): " + str(len(list(idxs["test"]["white male"]))))
-    print("Number of White Females (Test Set): " + str(len(list(idxs["test"]["white female"]))))
-
-'''
-
-
-
-
-
-
-
-
-
-
-'''
-    #get indexes of sensitve groups
-    index_dict = {
-        'test': {
-            'male_idx': test_df.index[test_df["sex_Male"] == True].tolist(),
-            'female_idx': test_df.index[test_df["sex_Female"] == True].tolist(),
-            'white_idx': test_df.index[test_df["race_White"] == True].tolist(),
-            'black_idx': test_df.index[test_df["race_Black"] == True].tolist()
-        },
-        'train': {
-            'male_idx': train_df.index[train_df["sex_Male"] == True].tolist(),
-            'female_idx': train_df.index[train_df["sex_Female"] == True].tolist(),
-            'white_idx': train_df.index[train_df["race_White"] == True].tolist(),
-            'black_idx': train_df.index[train_df["race_Black"] == True].tolist()
-        }
-    
-    }
-    
-    with open("Data/Adult/senstiveAttr.idx", 'wb') as file:
-        pkl.dump(index_dict, file)
-        
-        idxs = None
-    with open("Data/Adult/senstiveAttr.idx", 'rb') as file:
-        idxs = pkl.load(file)
-    
-    assert( idxs != None)
-    train_male = set(idxs["train"]["male_idx"])
-    train_female = set(idxs["train"]["female_idx"])
-    train_black = set(idxs["train"]["black_idx"])
-    train_white = set(idxs["train"]["white_idx"])
-    
-    test_male = set(idxs["test"]["male_idx"])
-    test_female = set(idxs["test"]["female_idx"])
-    test_black = set(idxs["test"]["black_idx"])
-    test_white = set(idxs["test"]["white_idx"])
-    
-    
-    newDict = {
-        "train" : {
-            "black male" : train_male.intersection(train_black),
-            "black female" : train_female.intersection(train_black),
-            "white male" : train_male.intersection(train_white),
-            "white female" : train_female.intersection(train_white)
-        },
-        
-        "test" : {
-            "black male": test_male.intersection(test_black),
-            "black female": test_female.intersection(test_black),
-            "white male": test_male.intersection(test_white),
-            "white female": test_female.intersection(test_white)
-            
-        }
-    }
-    
-    with open("Data/Adult/GenderSex.idx", 'wb') as file:
-        pkl.dump(newDict, file)
-    
-    
-    '''
-    
-    
-
-'''
-    demographic_groups = {
-        'white male': (test_df['race_White'] == 1) & (test_df['sex_Male'] == 1),
-        'white female': (test_df['race_White'] == 1) & (test_df['sex_Female'] == 1),
-        'black male': (test_df['race_Black'] == 1) & (test_df['sex_Male'] == 1),
-        'black female': (test_df['race_Black'] == 1) & (test_df['sex_Female'] == 1),
-        # Add other demographic groups as needed
-    }
-    
-
-    # Create a figure with 2x2 subplots
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    axes = axes.flatten()  # Flatten the 2D array of axes to 1D for easy iteration
-    
-    for ax, (group, condition) in zip(axes, demographic_groups.items()):
-        group_df = test_df[condition]
-        total_count = len(group_df)
-        
-        if total_count == 0:
-            continue  # Skip groups with no members
-        
-        # Count the number of individuals in each class
-        class_0_count = np.sum(group_df["target"] == 0)
-        class_1_count = np.sum(group_df["target"] == 1)
-        
-        # Calculate percentages
-        sizes = [class_0_count / total_count, class_1_count / total_count]
-        labels = ['<=50k', '>50k']
-        
-        # Plot pie chart
-        ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=140)
-        ax.set_title(f'Distribution of {group}')
-    
-    # Adjust layout
-    plt.tight_layout()
-    plt.show()
-    
-
-
-'''
-
-
-
-
-    
