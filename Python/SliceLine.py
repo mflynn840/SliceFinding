@@ -6,21 +6,6 @@ import time
 
 
 '''
-R = {
-    "sc" : sc,
-    "se" : se,
-    "sm" : sm,   
-    "ss" : ss         
-}
-
-'''
-        
-
-
-
-
-
-'''
     An implementation of SliceLine Fast Linear Alebra Based Slice Finding
     
     Algorithm Credit: https://dl.acm.org/doi/10.1145/3448016.3457323
@@ -45,21 +30,14 @@ R = {
             Size
 '''
 
-class Slice:
-    def __init__(self, idxs, error):
-        self.idxs = idxs
-        self.error = error
-        self.size = len(idxs)
-
-
 
 #------------------------------
-#TODO X0 has integer encoded featrues (categorical) our dataset does not !!!!
+#TODO X0 has integer encoded featrues (categorical) 1-fi our dataset does not !!!!
 #------------------------------  
 
 class SliceFinder:
 
-    def __init__(self, X, e:list, k=1, sigma=1, alpha=1.0, L=5, logger=None):
+    def __init__(self, X, e:list, k=1, sigma=1, alpha=1.0, L=5, logger=None, auto=True):
         
         #Return the top k slices from D with largest score
         #e: list of errors for each datapoint
@@ -72,8 +50,6 @@ class SliceFinder:
         self.logger = logger
         self.X0 = X
         self.k = k
-        self.topK = [Slice([-1],-1) for i in range(k)]
-        self.logger.debug("top k: " + str(self.topK) )
         self.errors = e
         self.sigma = sigma
         self.alpha = alpha
@@ -86,16 +62,27 @@ class SliceFinder:
         self.logger.info("features: " + str(self.m))
         self.logger.info("avg error: " + str(self.avgError))
         
-        #do the sliceline algorithm
+        
+        if auto:
+            self.run()
+
+    
+    def run(self):
+        #one hot encode, feature offsets
         fdom, fb, fe, X = self.data_prep()
         self.n2 = X.shape[1]
+        
+        #slices, stats, pruning indicator
         S, R, CI = self.find_score_basic_slices(X)
+        
+        #Top slices, top statistics
         TS, TR = self.maintainTopK(S, R, np.zeros((0, self.n2)), np.zeros((0,4)))
         
-        self.mainLoop(X, S, R, CI, TS, TR, fb, fe)
-
+        #Run sliceline
+        self.result = self.mainLoop(X, S, R, CI, TS, TR, fb, fe)
         
-            
+        
+        
 
          
     def mainLoop(self, X, S, R, CI, TK, TKC, fb, fe):
@@ -123,24 +110,53 @@ class SliceFinder:
             self.logger.info("Maintain topk")
             TK, TKC = self.maintainTopK(S, R, TK, TKC)
             
-        self.logger.debug("finished in " + str(t0-time.time()))
+        self.logger.debug("finished in " + str(time.time() - t0 ))
         self.logger.debug("decoding top-k slices")
         TK = self.decode_top_k(TK, fb, fe)
-        return TK, TKC
+        return {"TK" : TK, "TKC" : TKC}
             
     
     def decode_top_k(self, TK, fb, fe):
-        R = np.ones((TK.shape[0], TK.shape[1]))
         
+        print("TK")
+        print(TK)
+        R = np.ones((TK.shape[0], fb.shape[0]))
+        
+        print("R")
+        print(R)
+        
+        #for each feature beg-end
         if TK.shape[0] > 0:
-            for j in range(1, len(fb)):
+            for j in range(0, len(fb)):
                 beg =fb[j]
                 end = fe[j]
                 
-                sub_TK = TK[:, beg:end]
-                I = np.sum(sub_TK, axis=0) * np.argmax(sub_TK, axis=1) 
-                R[:,j] = I
+                print("beg")
+                print(beg)
+                print("end")
+                print(end)
                 
+                sub_TK = TK[:, beg:end]
+                print("sub tk")
+                print(sub_TK)
+                
+                print("rowsums")
+                print(np.sum(sub_TK, axis=1))
+                
+                print("maxcol")
+                mask = sub_TK == np.max(sub_TK, axis=1)[:, np.newaxis]
+                #print(mask)
+                
+                maxcol = np.array([np.where(mask_r)[0][-1] for mask_r in mask])
+                maxcol[maxcol != 0] += 1
+                print(maxcol)
+                I = np.sum(sub_TK, axis=1) * maxcol
+                print("I")
+                print(I)
+                R[:, j] = I
+        
+        print("R")   
+        print(R)    
         return R
                  
 
@@ -413,7 +429,7 @@ class SliceFinder:
             exit()
 
         
-        #extract combined slice sizes and errors as minimum of parents
+        #extract combined slice sizes and errors as minimum of parents (with parent handling)
         se = np.minimum(P1 @ R[:, 1], P2 @ R[:, 1])
         sm = np.minimum(P1 @ R[:, 2], P2 @ R[:, 2])
         ss = np.minimum(P1 @ R[:, 3], P2 @ R[:, 3])
@@ -671,41 +687,11 @@ def testBed():
     #X_train, _, _, _, _, _ = prepAdult()
     X_train = np.arange(1, n_rows+1).reshape(-1, 1) * np.ones((1, n_cols), dtype=int)
     errors = np.arange(1, 4).reshape(-1,1)
-    print(errors)
-
+    foo = SliceFinder(X_train, errors, k=4, sigma=1, alpha=0.95, L=1, logger=logger)
     
-    logger.debug("Xtrain: ")
-    logger.debug(X_train)
-    logger.debug("errors: ")
-    logger.debug(errors)
-    
-    
-
-    
-    foo = SliceFinder(X_train, errors, k=1, sigma=1, alpha=0.95, L=2, logger=logger)
-    
+    print("foo result")
+    print(foo.result)
     
 testBed()
 
 
-
-
-'''
-        #row and column index
-        rix = pd.Series((np.arange(1, self.m+1).reshape(-1,1) @ np.ones((1,self.n))).T.flatten())
-        print(rix.shape)
-        #rix = pd.Series(np.reshape(np.arange(1, self.m+1).reshape(-1,1) @ np.ones((1,self.n)), (self.m*self.n, 1)))
-        cix = pd.Series((self.X0 + fb).flatten())
-        
-        self.logger.debug("rix: \n" + str(rix))
-        self.logger.debug("cix: \n" + str(cix))
-
-        #contingency table
-        X = pd.crosstab( rix, cix).to_numpy()
-        print(X.shape)
-        self.logger.debug("X: \n" + str(X))
-        
-        return fdom, fb, fe, X
-
-'''
-    
