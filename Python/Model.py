@@ -60,6 +60,11 @@ class LogisticModel:
         
         return loss
     
+    def per_example_error(self, X, Y):
+        preds = self.thresholdedPredict(X)
+        errors = (preds != Y).astype(int)
+        return errors.reshape(-1,1)
+    
     
     #x1/y1 is a superset of X2/y2
     def GAError(self, X1, Y1, X2, Y2):
@@ -76,7 +81,7 @@ class LogisticModel:
         return normGradDiff
         
         
-    def fit(self, X_train, Y_train, X_test, Y_test, epochs, lr, decay=0):
+    def fit(self, X_train, Y_train, X_test, Y_test, epochs, lr, decay=0, showMetrics = False):
         train, test = Dataset.loadAdult()
         trainLoader, testLoader = DataLoader(train, batchSize=1000), DataLoader(test, batchSize=1)
         
@@ -96,7 +101,8 @@ class LogisticModel:
             
             getMetrics(X_train, Y_train, X_test, Y_test, self, self.metrics)
          
-        self.showMetrics(epochs)
+        if showMetrics:
+            self.showMetrics(epochs)
         
         
     def showMetrics(self, epochs:int):
@@ -162,8 +168,9 @@ def train_adult():
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
     model = LogisticModel(86)
-    model.fit(X_train, Y_train, X_test, Y_test, 200, .01)
+    model.fit(X_train, Y_train, X_test, Y_test, 20, .01)
+    print(model.per_example_error(X_train, Y_train))
 
 
     
-train_adult()
+#train_adult()

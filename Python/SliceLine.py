@@ -50,7 +50,11 @@ class SliceFinder:
         
         
         #Initilize variables
-        self.logger = logger
+        if logger == None:
+            self.logger = getLogger(__name__, "dummyLog.log")
+        else:
+            self.logger = logger
+            
         self.X0 = X
         self.k = k
         self.errors = e
@@ -490,7 +494,7 @@ class SliceFinder:
 
 
         #score pruning mask
-        ub_scores = self.upperbound_score(ub_sizes, ub_error, ub_max_error, self.sigma, self.alpha, self.avgError, self.n2)
+        ub_scores = self.upperbound_score(ub_sizes, ub_error, ub_max_error, self.n2)
         TMP3 = self.analyze_topK(TKC)
         minsc = TMP3["minScore"]
         fScores = (ub_scores > minsc) & (ub_scores > 0)
