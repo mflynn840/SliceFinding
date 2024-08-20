@@ -372,7 +372,7 @@ class SliceFinder:
 
         
         
-        self.logger.info("getting ids")
+        #self.logger.info("getting ids")
         #unique ids for each slice are the sum of weighted feature contributions
         ID = np.zeros((P.shape[0]), dtype=object)
         for j in range(dom.shape[0]):
@@ -392,27 +392,21 @@ class SliceFinder:
 
             ID = ID + I * scale
             
-        self.logger.info("got ids")
+        #self.logger.info("got ids")
 
         #size pruning by upper bounding sizes
-        
-        #print("getting map")
         map = pd.crosstab(pd.Series(ID), pd.Series(np.arange(0, P.shape[0]))).to_numpy()
-
-        #print("got map")
-        #print("map shape: " + str(map.shape))
         ex = np.ones((map.shape[0])).reshape(-1,1)
         ubSizes = 1/np.max(map * (1/ex @ ss.T), axis=0)
         ubSizes[ubSizes == np.inf] = 0
         fSizes = ubSizes >= self.sigma
-        #print("size pruning done")
         
         #error pruning mask
         ubError = 1/(np.max(map * (1/(ex @ se.T)), axis=0))
         ubError[ubError == np.inf] = 0
         ubMError = 1/np.max(map * (1/ (ex @ sm.T)), axis=0)
         ubMError[ubMError == np.inf] = 0.0
-        #print("error pruning done")
+
 
         
         #score pruning mask
@@ -420,7 +414,6 @@ class SliceFinder:
         TMP3 = self.analyze_topK(TKC)
         minsc = TMP3["minScore"]
         fScores = (ubScores > minsc) & (ubScores > 0)
-        #print("score pruning done")
         
         
         #missing parents pruning mask
