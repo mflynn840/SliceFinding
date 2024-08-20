@@ -42,7 +42,7 @@ from scipy.sparse import csr_matrix
 
 class SliceFinder:
 
-    def __init__(self, X, e:list, k=1, sigma=1, alpha=1.0, L=5, logger=None, auto=True):
+    def __init__(self, X, e:list, k=1, sigma=1, alpha=0.85, L=2, logger=None, auto=True):
         #e: list of errors for each datapoint
         #sigma: size threshold for smallest allowable slice
         #alpha: score function balancing parameter
@@ -126,7 +126,7 @@ class SliceFinder:
         while(S.shape[0] > 0 and L < self.L_max):
             L = L+1
             self.logger.info(" Forming new slices for level " + str(L))
-            S = self.get_pair_candidates(S, R, TK, TKC, L, fb, fe)
+            S = self.get_pair_candidates(S, R, TKC, L, fb, fe)
             
             self.logger.info("  Evaluating new slices")
             R = np.zeros((S.shape[0], 4))
@@ -410,8 +410,6 @@ class SliceFinder:
             #get parents
             P1 = self.expand(rix, S.shape[0])
             P2 = self.expand(cix, S.shape[0])
-            #print("P1: \n" + str(P1))
-            #print("P2: \n" + str(P2))
             
             #form new slices
             newSlices = P1 + P2
@@ -719,7 +717,7 @@ def testAdult():
     SliceFinder.pretty_print_results(sf.result, ["feature" + str(i) for i in range(86)])
     
 #testBed()
-testAdult()
+#testAdult()
 
 '''
 

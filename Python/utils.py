@@ -283,13 +283,11 @@ def unpickleDataset(train_path, test_path):
         
         
     
-X_train, Y_train, X_test, Y_test, train_df, test_df = prepAdult()
-train_df.drop('target', axis=1, inplace=True)
-test_df.drop("target", axis=1, inplace=True)
+#X_train, Y_train, X_test, Y_test, train_df, test_df = prepAdult()
+#train_df.drop('target', axis=1, inplace=True)
+#test_df.drop("target", axis=1, inplace=True)
+#pickleDataset(X_train, Y_train, X_test, Y_test, train_df, test_df ,"./Data/Adult")
 
-
-
-pickleDataset(X_train, Y_train, X_test, Y_test, train_df, test_df ,"./Data/Adult")
 
 #X1, Y1, X2, Y2 =  unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
 
