@@ -8,7 +8,7 @@ from scipy.stats import pearsonr
 from sklearn.linear_model import LinearRegression
 from utils import regressionGraph
 from sklearn.preprocessing import StandardScaler
-
+from sklearn.preprocessing import OneHotEncoder
 class LogisticModel:
     def __init__(self, numWeights):
         
@@ -82,12 +82,12 @@ class LogisticModel:
         
         
     def fit(self, X_train, Y_train, X_test, Y_test, epochs, lr, decay=0, showMetrics = False):
-        train, test = Dataset.loadAdult()
-        trainLoader, testLoader = DataLoader(train, batchSize=1000), DataLoader(test, batchSize=1)
         
-        X_train, Y_train = train[:]
-        X_test, Y_test = test[:]
+        train = Dataset(X_train, Y_train)
+        test = Dataset(X_test, Y_test)
 
+
+        trainLoader, testLoader = DataLoader(train, batchSize=1000), DataLoader(test, batchSize=1)
         
         for epoch in range(epochs):
             for i, (xs, ys) in trainLoader:
@@ -164,11 +164,15 @@ class LogisticModel:
 
 def train_adult():
     X_train, Y_train, X_test, Y_test = unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
-    model = LogisticModel(86)
-    model.fit(X_train, Y_train, X_test, Y_test, 20, .01)
+
+    encoder = OneHotEncoder()
+    encoder.fit(X_train)
+    X_train = encoder.transform(X_train).toarray()
+    X_test = encoder.transform(X_test).toarray()
+    
+
+    model = LogisticModel(128)
+    model.fit(X_train, Y_train, X_test, Y_test, 200, .01, showMetrics=True)
     print(model.per_example_error(X_train, Y_train))
 
 

@@ -179,7 +179,7 @@ def visualizeAdult(path = "Data/Adult/adult.data"):
 
 
 
-def pickleDataset(X_train, Y_train, X_test, Y_test, train_df, test_df, path=""):
+def pickleDataset(X_train, Y_train, X_test, Y_test, train_df, test_df, feature_map, path=""):
 
     with open(os.path.join(path, "train.pkl"), 'wb') as file:
         pkl.dump((X_train, Y_train), file)
@@ -191,7 +191,8 @@ def pickleDataset(X_train, Y_train, X_test, Y_test, train_df, test_df, path=""):
     train_df.to_csv(os.path.join(path, "train.csv"), header=True)
     test_df.to_csv(os.path.join(path, "test.csv"), header=True)
     
-        
+    with open(os.path.join(path, "featureMap.pkl"), 'wb') as file:
+        pkl.dump(feature_map, file)
 
         
             
@@ -229,18 +230,50 @@ def prepAdult(num_bins=10):
     test_df["target"] = test_df["target"].str.replace('.', '', regex=False)
     
 
-    #one hot encode categorical features
+    #encode categorical features
     categorical_features = ["workclass", "marital status", "occupation", "relationship", "race", "sex", "native country"]
     combined_df = pd.concat([train_df, test_df], keys=["train", "test"])
-    combined_df = pd.get_dummies(combined_df, columns = categorical_features)
+
+
+    feature_map = {}
+    for feature in categorical_features:
+        cat = pd.Categorical(combined_df[feature])
+        combined_df[feature] = cat.codes + 1
+        feature_map[feature] = dict(enumerate(cat.categories, start=1))
     
-    #convert all true false to be 1 and 2 to work with sliceline
-    combined_df = combined_df.map(lambda x: 1 if x is False else (2 if x is True else x))
-        
+    
+    feature_map["education-num"] = {
+    1: 'Preschool',
+    2: '1st-4th',
+    3: '5th-6th',
+    4: '7th-8th',
+    5: '9th',
+    6: '10th',
+    7: '11th',
+    8: '12th',
+    9: 'HS-grad',
+    10: 'Some-college',
+    11: 'Assoc-acdm',
+    12: 'Assoc-voc',
+    13: 'Bachelors',
+    14: 'Masters',
+    15: 'Doctorate',
+    16: 'Prof-school'
+    
+    }
+    
+    
+    
     #bin continuous features
     continuous_features = ["age", "fnlwgt", "hours/week"]
     for feature in continuous_features:
-        combined_df[feature] = pd.cut(combined_df[feature], bins=num_bins, labels=np.arange(1,num_bins+1))
+        bins = pd.cut(combined_df[feature], bins=num_bins, labels=np.arange(1,num_bins+1), retbins=True)[1]
+        bin_ranges = {}
+        for i in range(len(bins) - 1):
+            bin_ranges[i + 1] = f"{bins[i]:.2f}-{bins[i + 1]:.2f}"
+        
+        feature_map[feature] = bin_ranges  
+        combined_df[feature] = pd.cut(combined_df[feature], bins=bins, labels=np.arange(1,num_bins+1))
 
         
     #encode targets
@@ -266,7 +299,8 @@ def prepAdult(num_bins=10):
     Y_test = test_df['target'].values
 
 
-    return X_train, Y_train, X_test, Y_test, test_df, train_df
+    return X_train, Y_train, X_test, Y_test, train_df, test_df, feature_map
+
 
 
 def unpickleDataset(train_path, test_path):
@@ -283,14 +317,10 @@ def unpickleDataset(train_path, test_path):
         
         
     
-#X_train, Y_train, X_test, Y_test, train_df, test_df = prepAdult()
-#train_df.drop('target', axis=1, inplace=True)
-#test_df.drop("target", axis=1, inplace=True)
-#pickleDataset(X_train, Y_train, X_test, Y_test, train_df, test_df ,"./Data/Adult")
-
-
-#X1, Y1, X2, Y2 =  unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
-
+X_train, Y_train, X_test, Y_test, train_df, test_df, feature_map = prepAdult()
+train_df.drop('target', axis=1, inplace=True)
+test_df.drop("target", axis=1, inplace=True)
+pickleDataset(X_train, Y_train, X_test, Y_test, train_df, test_df, feature_map, path="./Data/Adult")
 
 def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None, last=False):
     

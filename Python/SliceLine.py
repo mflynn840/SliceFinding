@@ -54,6 +54,7 @@ class SliceFinder:
         #Initilize variables
         if logger == None:
             self.logger = getLogger(__name__, "dummyLog.log")
+            self.logger.setLevel(logging.INFO)
         else:
             self.logger = logger
             
@@ -755,15 +756,15 @@ class SliceFinder:
                 if slice[j] != 0:
                     
                     if domainValues == None:
-                        print("   " + str(featureNames[j] + " = " + str(slice[j])))
+                        print("   " + str(featureNames[j-1] + " = " + str(slice[j])))
                     else:
-                        print("   " + str(featureNames[j] + " = " + str(domainValues[j][slice[j]-1])))
+                        print("   " + str(featureNames[j-1] + " = " + str(domainValues[featureNames[j-1]][slice[j]])))
                         
                     
             #print scores
             print("   ----------------------------")
             print("   score: " + str(TKC[count][0]))
-            print("   avg. error: " + str(TKC[count][1]))
+            print("   toal error: " + str(TKC[count][1]))
             print("   max error: " + str(TKC[count][2]))
             print("   size: " + str(TKC[count][3]))
             
