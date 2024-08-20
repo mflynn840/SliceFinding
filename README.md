@@ -1,3 +1,15 @@
-2 tools:
-  1. SliceLine implemented in Python
-  2. Logistic regression training setup
+Install dependencies:
+  pip install -r requirements.txt
+
+Simple script to run sliceLine on Adult can be found in experiments.py
+
+
+  
+  
+  
+  
+  
+  
+
+
+
