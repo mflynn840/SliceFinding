@@ -7,7 +7,9 @@ import logging
 import math
 from scipy.sparse import csr_matrix
 
-'''
+
+"""_summary_
+
     An implementation of SliceLine Fast Linear Alebra Based Slice Finding
     
     Algorithm Credit: https://dl.acm.org/doi/10.1145/3448016.3457323
@@ -30,7 +32,7 @@ from scipy.sparse import csr_matrix
             Score
             Error
             Size
-'''
+"""
 
 
 #------------------------------
@@ -86,6 +88,26 @@ class SliceFinder:
     
     
     
+    
+    """
+        Summary:
+            Executes the recursive part of sliceLine
+            
+        Parameters:
+            X - a one hot encoded dataset matrix
+            S - a set of 1-predicate slices
+            R - statistics for the 1-predicate slices (R[0] = 
+            CI - pruning indicator for basic slices
+            TK - top-k slice representations
+            TKC - top-k slice statistics 
+            fb - feature begginings
+            fe - feature endings
+            
+        Returns:
+            {"TK" : TK, "TKC" : TKC}
+            TK is the final top-k slices
+            TKC is the final top-k statistics
+    """
     def mainLoop(self, X, S, R, CI, TK, TKC, fb, fe):
         
         t0 = time.time()
@@ -117,12 +139,24 @@ class SliceFinder:
         return {"TK" : TK, "TKC" : TKC}
             
     
-    '''
-        un-one hot the matrix to get slice representations from original dataset
-    '''
+    """
+        Summary:
+            convert slice representations back to original form (before X was one hot encoded)
+        
+        Paramaters:
+            TK - matrix of the top-k slices
+            fb - list of feature begginings
+            fe - list of feature endings
+            
+
+        Returns:
+
+    
+    
+    """
     def decode_top_k(self, TK, fb, fe):
         
-        R = np.ones((TK.shape[0], fb.shape[0]))
+        TK_decoded = np.ones((TK.shape[0], fb.shape[0]))
 
         #for each feature beg-end
         if TK.shape[0] > 0:
@@ -138,27 +172,49 @@ class SliceFinder:
                 maxcol[mask] += 1
                 I = np.sum(sub_TK, axis=1) * maxcol
 
-                R[:, j] = I
-  
-        return R
-                 
+                TK_decoded[:, j] = I
+        return TK_decoded
 
-    def eval_slice(self, X, e, tS, l, alpha):
-        I = (X @ tS) == 1
-        ss = np.sum(I, axis=1)
-        se = (e.T @ I).T
-        sm = np.sum(I * (e @ np.ones((1, I.shape[1]))))
+
+    """
+        Summary:
+            get statistics for slice S 
         
+        Parameters:
+            X: one hot encoded dataset
+            e: error vector for entire dataset
+            S: a slice that needs to be evaluated
+        
+        Returns:
+            stats: vector where stats[0]=score, stats[1] = error, stats[2] = max error, stats[3] = size
+    """
+    def eval_slice(self, X, e, S):
+        
+        #indicator for which columns of error vector this slice needs
+        s_mask = (X @ S) == 1
+        
+        #slice size, total error, max error, score
+        ss = np.sum(s_mask, axis=1)
+        se = (e.T @ s_mask).T
+        sm = np.sum(s_mask * (e @ np.ones((1, s_mask.shape[1]))))
         sc = self.score(ss, se, X.shape[0])
-        R = np.vstack((sc, se, sm, ss)).T
-        return R
+        
+        #stack them to form a row in 
+        stats = np.vstack((sc, se, sm, ss)).T
+        return stats
     
-    '''
-        Data Prep (SliceLine):
+    """
+        Summary: 
             1. Find domains for each feature
             2. Compute start and end offset of each feature
-            3. Get matrix X which has one hot encoding over all features and domains
-    '''
+            3. get one hot encoding of entire dataset
+        
+        Returns:
+            fdom - domains sizes for each feature
+            fb - feature begginings in one hot matrix
+            fe - feature endings in one hot matrix
+            X - one hot encoded dataset
+    """
     
     def data_prep(self):
         
@@ -166,33 +222,43 @@ class SliceFinder:
         fdom = np.max(self.X0, axis=0)
         self.logger.debug("fdom: " + str(np.max(self.X0, axis=0)))
         
-        #fb is the feature offsets
+        #fb is where each feature in new matrix starts
         fb = np.cumsum(fdom) - fdom
         self.logger.debug("fb: " + str(fb))
         
-        #fe are feature ending points
+        #fe is where each feature in new matrix ends
         fe = np.cumsum(fdom)
         self.logger.debug("fe: " + str(fe))
         
+        
+        #one hot encode the entire dataset
         encoder = OneHotEncoder()
         X = encoder.fit_transform(self.X0).toarray()
-        #print("X: \n" + str(X)) 
+
+
         return fdom, fb, fe, X
-      
     
-    '''
-        compute count bins for an int or vector
+    
+    """
+        Summary:
+            -count bins for an int or vector
+            -for ints it returns a set of bins with that ints bin set to value 1
+            -for vectors it returns a set of bins where bins[i] is the number of occourances of i in the vector
         
-        for ints it returns a set of bins with that ints bin set to value 1
-        for vectors it returns a set of bins where bins[i] is the number of occourances of i in the vector
-    '''
-    def getCounts(self, vi, vmax):
-        if type(vi) is np.int64:
-            vec = np.zeros((vmax))
-            vec[vi] = 1
+        Parameters:
+            v - vector or integer
+            vmax - the number of bins to include, must be >= the largest element in v
+        
+    """
+    def getCounts(self, v, bins):
+        
+        if type(v) is np.int64:
+            vec = np.zeros((bins))
+            vec[v] = 1
             return vec
-        elif type(vi) is np.ndarray:
-            vec = np.zeros((vmax))
+        
+        elif type(v) is np.ndarray:
+            vec = np.zeros((bins))
             for vij in vi:
                 vec[vij] += 1
         else:
@@ -203,9 +269,11 @@ class SliceFinder:
                 
         
 
-    '''
-        one hot encode a vector v into m bins
-    '''
+    """
+        Summary:
+            gets a dense matrix representation of a sparse matrix v
+        
+    """
     def expand(self, v, m=None):
         
         
@@ -221,12 +289,17 @@ class SliceFinder:
         return R
     
     
-    '''
-        Returns
-        S basic slices
-        R slice errors
-        CI pruning indicator
-    '''
+    """
+        Summary:
+            Find the 1-predicate slices and their statistics
+        Parameters:
+            X - one hot encoded dataset
+            
+        Returns:
+            S - basic slices 
+            R - basic slice statistics
+            CI - pruning indicator on size and score
+    """
     def find_score_basic_slices(self, X):
         
         n,m = X.shape
@@ -236,14 +309,12 @@ class SliceFinder:
         
         #se0 = error of each basic slice
         se0 = (self.errors * X).sum(axis=0)
-        self.logger.debug("se0: \n" + str(se0))
         
+        #sm0 = the maximum error among elements in each slice
         sm0 = (self.errors * X).max(axis=0)
-        self.logger.debug("sm0: \n" + str(sm0))
-        
+
         #pruning indicator
         CI = (ss0 >= self.sigma) & (se0 > 0)
-        self.logger.debug("CI: \n" + str(CI))
 
         #prune basic slice scores and errors
         ss = ss0[CI]
@@ -255,30 +326,48 @@ class SliceFinder:
         self.logger.debug("sm: \n" + str(sm))
         
         
-        #a set of pruned slices
+        #a set of pruned slices (very sparse matrix representation)
         slices = self.expand(np.arange(0, m)[CI], m=m)
-        #print("slices" + str(slices))
-        
-        
+
         #slice scores
         sc = self.score(ss, se, self.n)
-        self.logger.debug("sc: \n" + str(sc))
+
         
-        #statistics vector
+        #form statistics matrix
         R = np.vstack((sc, se, sm, ss)).T
-
-
 
         return slices, R, CI
         
 
 
-    '''
-        Form a set of valid L-predicate slices using the given L-1 predicate slices S
-    '''
-    def get_pair_candidates(self, S, R, TK, TKC, L, fb, fe):
+    """
+        Summary:
+            Form a set of valid L-predicate slices using the given L-1 predicate slices S
+            
+            1. form every combination of slices from level L-1
+            2. prune those without L-2 overlap
+            3. form row and column index pairs of valid combinations
+            4. get parents using row,column index pairs
+            5. form new slices
+            6. prune slices that assign more than one value to a feature
+            7. extract size and error for new slices as the minimum of its parents
+            8. deduplication using unique ids
+            9. upper bound the scoring function and prune new slices
+            
+        Parameters:
+            S - slices from level L-1
+            R - statistics for those slices
+            TKC - top-k slice statistics
+            L - current level
+            fb - feature begginings
+            fe - feature endings
+            
+        Returns:
+            P - a set of valid pair candidates 
+    """
+    def get_pair_candidates(self, S, R, TKC, L, fb, fe):
         
-        #1. prune invalid input slices using thresholds for size (sigma) and error (non-negative)
+        #prune invalid input slices using thresholds for size (sigma) and error (non-negative)
         CI = (R[:, 3] >= self.sigma) & (R[:, 1] > 0)
         S = S[CI]
 
@@ -287,15 +376,14 @@ class SliceFinder:
 
         #valid slices should have L-2 overlap
         valid_SST = (SST == (L-2))
-        #print("valid SST: \n" + str(valid_SST))
-        
+
         
         #since the matrix is symetric we only need top half
         #I is a mask for new slices with L-2 overlap
         I = np.triu(valid_SST) * valid_SST
         
 
-        #create combined slices by converting I to row, column index pairs (rix and cix)
+        #create combined slices parents by converting I to row, column index pairs (rix and cix)
         n_rows, n_cols = I.shape
         
         #form row index matrix
@@ -315,7 +403,7 @@ class SliceFinder:
         #if there are new slices
         if np.sum(rix) != 0:
             
-            #get parents from row and column indicies
+            #get parents
             P1 = self.expand(rix, S.shape[0])
             P2 = self.expand(cix, S.shape[0])
             #print("P1: \n" + str(P1))
@@ -330,19 +418,14 @@ class SliceFinder:
             exit()
 
         
-        #extract combined slice sizes and errors as minimum of parents (with parent handling)
+        #extract new slice sizes and errors as minimum of parents (with parent handling)
         se = np.minimum(P1 @ R[:, 1], P2 @ R[:, 1])
         sm = np.minimum(P1 @ R[:, 2], P2 @ R[:, 2])
         ss = np.minimum(P1 @ R[:, 3], P2 @ R[:, 3])
-        #print("ss: \n" + str(ss))
-        #print("se: \n" + str(se))
-        #print("sm: \n" + str(sm))
 
 
 
-        #step 4: discard invalid slices with multiple assignments per feature
-        
-        #indicator for valid new slices      
+        #discard invalid slices with multiple assignments per feature using indicator I
         I = np.ones((P.shape[0]), dtype=bool)
 
         #with each expanded feature (from beg-end)
@@ -367,13 +450,9 @@ class SliceFinder:
 
 
 
-        #step 5: duduplication 
+        #deduplication 
         dom = fe-fb+1
-
-        
-        
-        #self.logger.info("getting ids")
-        #unique ids for each slice are the sum of weighted feature contributions
+        #unique ids for each slice are the sum of weighted feature contributions.  Makes it so slices map to same ID if they have same features
         ID = np.zeros((P.shape[0]), dtype=object)
         for j in range(dom.shape[0]):
             beg = fb[j]
@@ -391,57 +470,60 @@ class SliceFinder:
             scale = int(scale)
 
             ID = ID + I * scale
-            
-        #self.logger.info("got ids")
+    
 
-        #size pruning by upper bounding sizes
+        #map cotains deduplication pruning mask
         map = pd.crosstab(pd.Series(ID), pd.Series(np.arange(0, P.shape[0]))).to_numpy()
         ex = np.ones((map.shape[0])).reshape(-1,1)
-        ubSizes = 1/np.max(map * (1/ex @ ss.T), axis=0)
-        ubSizes[ubSizes == np.inf] = 0
-        fSizes = ubSizes >= self.sigma
+        
+        #size pruning by upper bounding sizes
+        ub_sizes = 1/np.max(map * (1/ex @ ss.T), axis=0)
+        ub_sizes[ub_sizes == np.inf] = 0
+        f_sizes = ub_sizes >= self.sigma
+        
         
         #error pruning mask
-        ubError = 1/(np.max(map * (1/(ex @ se.T)), axis=0))
-        ubError[ubError == np.inf] = 0
-        ubMError = 1/np.max(map * (1/ (ex @ sm.T)), axis=0)
-        ubMError[ubMError == np.inf] = 0.0
+        ub_error = 1/(np.max(map * (1/(ex @ se.T)), axis=0))
+        ub_error[ub_error == np.inf] = 0
+        ub_max_error = 1/np.max(map * (1/ (ex @ sm.T)), axis=0)
+        ub_max_error[ub_max_error == np.inf] = 0.0
 
 
-        
         #score pruning mask
-        ubScores = self.upperbound_score(ubSizes, ubError, ubMError, self.sigma, self.alpha, self.avgError, self.n2)
+        ub_scores = self.upperbound_score(ub_sizes, ub_error, ub_max_error, self.sigma, self.alpha, self.avgError, self.n2)
         TMP3 = self.analyze_topK(TKC)
         minsc = TMP3["minScore"]
-        fScores = (ubScores > minsc) & (ubScores > 0)
+        fScores = (ub_scores > minsc) & (ub_scores > 0)
         
         
         #missing parents pruning mask
         sparse_map = csr_matrix(map)
         sparse_slices = csr_matrix(newSlices)
         result_sparse = sparse_map.dot(sparse_slices)
-        numParents = result_sparse.nnz
-        fParents = (numParents == L)
-        #print("parent pruning done")
-        
-        #print("applying pruning masks")
-        #combine all masks
-        map = map * (fSizes & fScores & fParents) @ np.ones(map.shape[1])
+        num_parents = result_sparse.nnz
+        f_parents = (num_parents == L)
+
+        #combine all pruning masks
+        map = map * (f_sizes & fScores & f_parents) @ np.ones(map.shape[1])
 
 
-        #apply masks and deduplication
+        #apply masks
         dedup = map[np.max(map, axis=0) != 0,:] != 0
         P = (dedup @ P) != 0
-        #print("done applying pruning masks")
-        #return new slices
+
         return P
     
     
-    '''
-        find minimum and maximum score in the current topk set TKC
+    """
+        Summary:
+            find minimum and maximum score in the current topk set TKC
         
-        returns {"maxScore" : float, "minScore": float}
-    '''
+        Paramters:
+            TKC: a k x 4 matrix of statistics for current slices
+
+        Returns:
+            {"maxScore" : float, "minScore": float}
+    """
     def analyze_topK(self, TKC):
         maxScore = -np.inf
         minScore = -np.inf
@@ -456,35 +538,48 @@ class SliceFinder:
 
 
     
-    '''
-        Apply scoring function to the current sizes errors,sizes and n
-        if divide by 0 occours, turn into -inf
+    """
+        Summary:
+            Apply SliceLines scoring function if divide by 0 occours, turn into -inf
+            
+        Parameters:
+            sliceSizes: vector of sizes for each slice
+            sliceErrors: vector of errors for each slice
+            nrows: number of samples in the entire dataset
     
-    '''
-    def score(self, sliceSizes, sliceErrors, nrows):
-        sc = self.alpha * ((sliceErrors/sliceSizes) / self.avgError - 1) - (1-self.alpha) * (nrows/sliceSizes - 1)
+    """
+    def score(self, slice_sizes, slice_errors, total_samples):
+        sc = self.alpha * ((slice_errors/slice_sizes) / self.avgError - 1) - (1-self.alpha) * (total_samples/slice_sizes - 1)
         return np.nan_to_num(sc, nan=-np.inf)
     
     
 
-    '''
-        upper bound slicelines scoring function by computing it at several critical points and taking the maximum
-    
-    
-    '''
+    """
+        Summary:
+            Compute an upper bound for slicelines scoring function
+        
+        Parameters:
+            ss: size of each slice
+            se: error for each slice
+            sm: max error for each slice
+            min
 
-    def upperbound_score(self, ss, se, sm, minSup, alpha, avg_error, n):
+    
+    
+    """
+
+    def upperbound_score(self, ss, se, sm, n):
         # probe interesting points of sc in the interval [minSup, ss],
         # and compute the maximum to serve as the upper bound 
         
         #s is the critical points we have to check
-        s = np.column_stack((np.full((ss.shape[0]), minSup), np.maximum(se/sm, minSup), ss))
+        s = np.column_stack((np.full((ss.shape[0]), self.sigma), np.maximum(se/sm, self.sigma), ss))
         ex = np.ones((3))
         smex = s*np.column_stack((sm, sm, sm))
         seex = np.column_stack((se, se, se))
         pmin = np.minimum(smex, seex)
 
-        sc = np.max(alpha * ((pmin/s) / avg_error-1) - (1-alpha) * (1/s*n - 1), axis=1)
+        sc = np.max(self.alpha * ((pmin/s) / self.avg_error-1) - (1-self.alpha) * (1/s*n - 1), axis=1)
         sc = np.nan_to_num(sc, nan=-np.inf)
         
         
