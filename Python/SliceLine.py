@@ -28,7 +28,7 @@ class SliceLine(SliceFinder):
         :return: 
             The computed scores for each slice, with `-inf` for cases where division by zero occurs.
         """
-        sc = self.alpha * ((slice_errors/slice_sizes) / self.avgError - 1) - (1-self.alpha) * (total_samples/slice_sizes - 1)
+        sc = self.alpha * ((slice_errors/slice_sizes) / self.avg_error - 1) - (1-self.alpha) * (total_samples/slice_sizes - 1)
         return np.nan_to_num(sc, nan=-np.inf)
     
 
@@ -67,8 +67,6 @@ class SliceLine(SliceFinder):
         
         return sc
     
-       
-
 
 def testBed():
     """
@@ -113,9 +111,9 @@ def testAdult():
     errors_df.to_csv("./Data/Adult/dummyErrors.csv", header=True)
     
     sigma = max(math.ceil(0.01 * X_train.shape[0]), 8)
-    sf = SliceFinder(X_train, errors, k=4, sigma=5, alpha=0.95, L=2, logger=logger, auto=False)
+    sf = SliceLine(X_train, errors, k=4, sigma=5, alpha=0.95, L=2, logger=logger, auto=False)
     sf.run()
-    SliceFinder.pretty_print_results(sf.result, ["feature" + str(i) for i in range(86)])
+    print("done")
+    print(sf.result)
+    SliceLine.pretty_print_results(sf.result, ["feature" + str(i) for i in range(86)])
     
-
-

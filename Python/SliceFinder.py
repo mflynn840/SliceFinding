@@ -67,10 +67,12 @@ class SliceFinder(ABC):
         self.alpha = alpha
         self.n, self.m = self.X0.shape[0], self.X0.shape[1]
         self.L_max = min(L, self.m)
-        self.avgError = np.sum(self.errors)/self.n
+        self.avg_error = np.sum(self.errors)/self.n
         self.logger.info("samples: " + str(self.n))
         self.logger.info("features: " + str(self.m))
-        self.logger.info("avg error: " + str(self.avgError))
+        self.logger.info("avg error: " + str(self.avg_error))
+        
+        print("k: " + str(self.k))
         
         
         
@@ -163,6 +165,10 @@ class SliceFinder(ABC):
             
             self.logger.info("  Maintaing topk")
             TK, TKC = self.maintainTopK(S, R, TK, TKC)
+            
+
+                
+                
             
         self.logger.debug("finished in " + str(time.time() - t0 ))
         self.logger.debug("decoding top-k slices")

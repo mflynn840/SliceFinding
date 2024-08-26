@@ -1,4 +1,4 @@
-from SliceLine import SliceFinder
+from SliceLine import SliceLine
 from utils import unpickleDataset
 from Model import LogisticModel
 import math
@@ -34,7 +34,9 @@ def SliceLineAdult():
 
 
     #run sliceline
-    sf = SliceFinder(X_train, e, k=3, sigma=sigma, L=1, auto=True)
-    SliceFinder.pretty_print_results(sf.result, featureNames, domains)
+    sf = SliceLine(X_train, e, k=1, sigma=sigma, L=4, auto=True)
+    
+    print(sf.result)
+    SliceLine.pretty_print_results(sf.result, featureNames, domains)
     
 SliceLineAdult()
