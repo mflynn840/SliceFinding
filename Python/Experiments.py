@@ -26,6 +26,7 @@ def SliceLineAdult():
     with open("./Data/Adult/featureMap.pkl", 'rb') as file:
         domains = pkl.load(file)
 
+    print(domains)
     #train a logistic regression model and get the per example error
     model = LogisticModel(X_train_one_hot.shape[1])
     model.fit(X_train_one_hot, Y_train, X_test_one_hot, Y_test, 20, .01)
@@ -34,7 +35,7 @@ def SliceLineAdult():
 
 
     #run sliceline
-    sf = SliceLine(X_train, e, k=1, sigma=sigma, L=4, auto=True)
+    sf = SliceLine(X_train, e, k=10, sigma=sigma, alpha=0.95, L=4, auto=True)
     
     print(sf.result)
     SliceLine.pretty_print_results(sf.result, featureNames, domains)

@@ -324,57 +324,21 @@ pickleDataset(X_train, Y_train, X_test, Y_test, train_df, test_df, feature_map, 
 
 def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None, last=False):
     
-    #get a new metrics if one is not provided
+    
     if metrics == None:
         metrics = {
-                    "train": {
-                        "bm_acc": [],  # Black male accuracy
-                        "bf_acc": [],  # Black female accuracy
-                        "wm_acc": [],  # White male accuracy
-                        "wf_acc": [],  # White female accuracy
-                        "bm_ga": [],   # Black male GAError
-                        "bf_ga": [],   # Black female GAError
-                        "wm_ga": [],   # White male GAError
-                        "wf_ga": [],   # White female GAError
-                        "avg_acc": []  # Average accuracy across all groups
-                    },
-                    "test": {
-                        "bm_acc": [],  # Black male accuracy
-                        "bf_acc": [],  # Black female accuracy
-                        "wm_acc": [],  # White male accuracy
-                        "wf_acc": [],  # White female accuracy
-                        "bm_ga": [],   # Black male GAError
-                        "bf_ga": [],   # Black female GAError
-                        "wm_ga": [],   # White male GAError
-                        "wf_ga": [],   # White female GAError
-                        "avg_acc": []  # Average accuracy across all groups
-                    }
-                }
-                        
+            "train" : {
+
+            },
+            "test" : {
+                
+            }
+        }
+        
+    #for each 1-predicate slice
     train_preds = model.thresholdedPredict(X_train)
     test_preds = model.thresholdedPredict(X_test)
     
-    idxs = None
-    with open("Data/Adult/groups.idx", 'rb') as file:
-        idxs = pkl.load(file)
-    
-    
-    acc_map = {
-        "black male" : "bm_acc",
-        "black female" : "bf_acc",
-        "white male" : "wm_acc",
-        "white female" : "wf_acc",
-    }
-    
-    ga_map = {
-        "black male" : "bm_ga",
-        "black female" : "bf_ga",
-        "white male" : "wm_ga",
-        "white female" : "wf_ga"
-    }
-    
-    
-    #get all metrics for all groups in train and test sets
     for ss in ["test", "train"]:
         if ss == "test":
             cur_dat = X_test
@@ -385,17 +349,32 @@ def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None, last=False
             cur_preds = train_preds
             cur_truths = Y_train
             
-        for group in ["black male", "black female", "white male", "white female"]:
-            group_acc = accuracy_score(cur_truths[list(idxs[ss][group])], cur_preds[list(idxs[ss][group])])
+        count = 0
+        
+        for i in cur_dat.T:
+            slice_idxs = np.where(i == 1)[0]
+            #print(slice_idxs)
             
-            #GA error between full dataset and current group subset
-            group_ga = model.GAError(cur_dat, cur_truths, cur_dat[list(idxs[ss][group])], Y_train[list(idxs[ss][group])])
-            metrics[ss][acc_map[group]].append(group_acc)
-            metrics[ss][ga_map[group]].append(group_ga)
+            if len(slice_idxs != 0):
+                group_acc = accuracy_score(cur_truths[slice_idxs], cur_preds[slice_idxs])
+                group_ga = model.GAError(cur_dat, cur_truths, cur_dat[slice_idxs], cur_truths[slice_idxs])
+                
+                
+                if "group" + str(count) + "_acc" in metrics[ss].keys():
+                    metrics[ss]["group" + str(count) + "_acc"].append(group_acc)
+                else:
+                    metrics[ss]["group" + str(count) + "_acc"] = []
+                    metrics[ss]["group" + str(count) + "_acc"].append(group_acc)
+                    
+                    
+                if "group" + str(count) + "_ga" in metrics[ss].keys():
+                    metrics[ss]["group" + str(count) + "_ga"].append(group_ga)
+                else:
+                    metrics[ss]["group" + str(count) + "_ga"] = []
+                    metrics[ss]["group" + str(count) + "_ga"].append(group_ga)
+                    
+                count += 1
             
-
-        #get average accuracy for whole dataset
-        metrics[ss]["avg_acc"].append(accuracy_score(cur_truths, cur_preds))
 
 
     return metrics

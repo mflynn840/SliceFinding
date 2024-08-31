@@ -9,36 +9,16 @@ from sklearn.linear_model import LinearRegression
 from utils import regressionGraph
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import OneHotEncoder
+
+import matplotlib.pyplot as plt
+
 class LogisticModel:
     def __init__(self, numWeights):
         
         self.W = np.ones(numWeights)
         self.b = 0
-        self.metrics = {
-                    "train": {
-                        "bm_acc": [],  # Black male accuracy
-                        "bf_acc": [],  # Black female accuracy
-                        "wm_acc": [],  # White male accuracy
-                        "wf_acc": [],  # White female accuracy
-                        "bm_ga": [],   # Black male GAError
-                        "bf_ga": [],   # Black female GAError
-                        "wm_ga": [],   # White male GAError
-                        "wf_ga": [],   # White female GAError
-                        "avg_acc": []  # Average accuracy across all groups
-                    },
-                    "test": {
-                        "bm_acc": [],  # Black male accuracy
-                        "bf_acc": [],  # Black female accuracy
-                        "wm_acc": [],  # White male accuracy
-                        "wf_acc": [],  # White female accuracy
-                        "bm_ga": [],   # Black male GAError
-                        "bf_ga": [],   # Black female GAError
-                        "wm_ga": [],   # White male GAError
-                        "wf_ga": [],   # White female GAError
-                        "avg_acc": []  # Average accuracy across all groups
-                    }
-                }
-        
+        self.metrics = None
+
     def predict(self, X):
         return self.sigmoid(np.dot(X, self.W) + self.b)
         
@@ -99,7 +79,7 @@ class LogisticModel:
                 self.W -= lr * w_grad
                 self.b -= lr * b_grad
             
-            getMetrics(X_train, Y_train, X_test, Y_test, self, self.metrics)
+            self.metrics = getMetrics(X_train, Y_train, X_test, Y_test, self, self.metrics)
          
         if showMetrics:
             self.showMetrics(epochs)
@@ -162,6 +142,54 @@ class LogisticModel:
         #regressionGraph(metrics["test"]["wm_acc"], metrics["test"]["wm_ga"], "White Male", "test")
         #regressionGraph(metrics["test"]["wf_acc"], metrics["test"]["wf_ga"], "White Female", "test")
 
+
+
+def regressionGraph(x1, x2, ss):
+    
+    #x1 is accuracy
+    x1 = np.array(x1).reshape(-1, 1)
+    x2 = np.array(x2)
+    
+    model = LinearRegression()
+    model.fit(x1,x2)
+    
+
+    # Predict values
+    x1_pred = np.linspace(min(x1), max(x1), 100).reshape(-1, 1)
+    x2_pred = model.predict(x1_pred)
+
+    # Compute Pearson correlation coefficient
+    r, _ = pearsonr(x1.flatten(), x2)
+
+    # Get slope and intercept
+    slope = model.coef_[0]
+    intercept = model.intercept_
+    # Plot the data and the regression line
+    plt.figure(figsize=(8, 6))
+    plt.scatter(x1, x2, color='blue', label='Data points')
+    plt.plot(x1_pred, x2_pred, color='red', linestyle='--', label='Regression line')
+
+    # Annotate Pearson correlation coefficient, slope, and intercept inside the plot area
+    plt.annotate(f'Pearson r = {r:.2f}\nSlope = {slope:.2f}\nIntercept = {intercept:.2f}', 
+                 xy=(0.1, 0.9), 
+                 xycoords='axes fraction', 
+                 fontsize=14, 
+                 ha='left', 
+                 va='top', 
+                 color='red',
+                 bbox=dict(facecolor='white', alpha=0.5, edgecolor='none'))
+    
+    
+    # Add labels and title
+    plt.xlabel('Group Accuracy')
+    plt.ylabel('Group GA error')
+    plt.title(" Accuracy vs. GA error (" + ss + " set)")
+    plt.legend()
+    plt.grid(True)
+
+    # Show the plot
+    plt.show()
+
 def train_adult():
     X_train, Y_train, X_test, Y_test = unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
 
@@ -169,12 +197,43 @@ def train_adult():
     encoder.fit(X_train)
     X_train = encoder.transform(X_train).toarray()
     X_test = encoder.transform(X_test).toarray()
-    
+
 
     model = LogisticModel(128)
-    model.fit(X_train, Y_train, X_test, Y_test, 200, .01, showMetrics=True)
-    print(model.per_example_error(X_train, Y_train))
+    model.fit(X_train, Y_train, X_test, Y_test, 200, .01, showMetrics=False)
+    
+    metrics = model.metrics
+    #print(metrics)
+    
+    x1_early = []
+    x2_early = []
+    
+    x1_late = []
+    x2_late = []
+    
+    
+    epoch_early = 25
+    epoch_late = 199
+    for i in metrics["train"].keys():
+        if "acc" in i and i != "avg_acc":
+            x1_early.append(metrics["train"][i][epoch_early])
+            x1_late.append(metrics["train"][i][epoch_late])
+            
+             
+    for i in metrics["train"].keys():
+        if "ga" in i:
+            x2_early.append(metrics["train"][i][epoch_early])
+            x2_late.append(metrics["train"][i][epoch_late])
+            
+            
+                   
+    regressionGraph(x1_early, x2_early, "train early")
+    regressionGraph(x1_late, x2_late, "train late")
+    
+    
+    
+
 
 
     
-#train_adult()
+train_adult()

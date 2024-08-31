@@ -7,6 +7,11 @@ import math
 import pandas as pd
 
 
+
+class GASliceFinder(SliceFinder):
+    def __init__(self, X, e:list, k=1, sigma=1, alpha=0.85, L=2, logger=None, auto=True):
+        super().__init__(X, e, k, sigma, alpha, L, logger, auto)
+    
 class SliceLine(SliceFinder):
     def __init__(self, X, e:list, k=1, sigma=1, alpha=0.85, L=2, logger=None, auto=True):
         super().__init__(X, e, k, sigma, alpha, L, logger, auto)
