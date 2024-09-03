@@ -21,7 +21,7 @@ class SliceFinder(ABC):
 
         An implementation of SliceLine Fast Linear Alebra Based Slice Finding
         
-        Algorithm Credit: https://dl.acm.org/doi/10.1145/3448016.3457323
+         Credit: https://dl.acm.org/doi/10.1145/3448016.3457323
 
 
         Parameters:
@@ -89,19 +89,19 @@ class SliceFinder(ABC):
     
     def run(self):
         #one hot encode dataset and get new feature begginings (fb) and ends (fe)
-        fdom, fb, fe, X = self.data_prep()
+        domains, f_beg, f_end, X = self.data_prep()
         
         #new number of features
-        self.m2 = X.shape[1]
+        self.features = X.shape[1]
         
         #get 1-predicate slices, stats, pruning indicator
         S, R, CI = self.find_score_basic_slices(X)
         
         #Top slices (TS), top statistics (TR)
-        TS, TR = self.maintainTopK(S, R, np.zeros((0, self.m2)), np.zeros((0,4)))
+        TS, TR = self.maintainTopK(S, R, np.zeros((0, self.features)), np.zeros((0,4)))
         
         #Run recursive step
-        self.result = self.mainLoop(X, S, R, CI, TS, TR, fb, fe)
+        self.result = self.mainLoop(X, S, R, CI, TS, TR, f_beg, f_end)
     
     
     
@@ -109,7 +109,6 @@ class SliceFinder(ABC):
 
     def mainLoop(self, X, S, R, CI, TK, TKC, fb, fe):
         """
-
             Executes the recursive part of sliceLine
             
             :param X: 
@@ -252,6 +251,7 @@ class SliceFinder(ABC):
     
     
     def data_prep(self):
+        
         """
         Summary: 
             1. Find domains for each feature.
@@ -264,6 +264,7 @@ class SliceFinder(ABC):
             - fe: Feature endings in the one-hot matrix.
             - X: One-hot encoded dataset.
         """
+        
         #fdom (feature domain sizes) are the maximum value along ecah column of the dataset for continuous integer encoding
         fdom = np.max(self.X0, axis=0)
         self.logger.debug("fdom: " + str(np.max(self.X0, axis=0)))
@@ -577,7 +578,7 @@ class SliceFinder(ABC):
     
     
 
-    def analyze_topK(self, TKC):
+    def analyze_topK(self, topK):
         """
         Summary:
             Find the minimum and maximum score in the current top-k set `TKC`.
@@ -590,12 +591,9 @@ class SliceFinder(ABC):
             - `"maxScore"`: The maximum score (float).
             - `"minScore"`: The minimum score (float).
         """
-        maxScore = -np.inf
-        minScore = -np.inf
-        
-        if TKC.shape[0] > 0:
-            maxScore = TKC[0,0]
-            minScore = TKC[0, TKC.shape[1]-1]
+        if topK.shape[0] > 0:
+            maxScore = topK[0,0]
+            minScore = topK[0, topK.shape[1]-1]
             
 
         return {"maxScore" : maxScore, "minScore" : minScore}
@@ -625,9 +623,7 @@ class SliceFinder(ABC):
             - `TK`: Updated top-k slices.
             - `TKC`: Updated top-k statistics.
         """
-        
-        self.logger.debug("Maintain topk:")
-        top_k_indicies = None
+
         
 
         #prune on size and score

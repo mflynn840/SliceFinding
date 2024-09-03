@@ -12,12 +12,18 @@ from sklearn.preprocessing import OneHotEncoder
 
 import matplotlib.pyplot as plt
 
+
+
+
 class LogisticModel:
-    def __init__(self, numWeights):
+    def __init__(self, numWeights, VOG=False, VOG_freq=1):
         
         self.W = np.ones(numWeights)
         self.b = 0
         self.metrics = None
+        self.VOG = VOG
+        self.VOG_freq = VOG_freq
+        self.grads = []
 
     def predict(self, X):
         return self.sigmoid(np.dot(X, self.W) + self.b)
@@ -79,11 +85,26 @@ class LogisticModel:
                 self.W -= lr * w_grad
                 self.b -= lr * b_grad
             
+            if self.VOG and epoch % self.VOG_freq == 0:
+                y_hat = self.predict(X_train)
+                self.grads.append((y_hat * (1-y_hat)).reshape(-1,1) * np.tile(self.W, (y_hat.shape[0], 1)))
+            
             self.metrics = getMetrics(X_train, Y_train, X_test, Y_test, self, self.metrics)
          
         if showMetrics:
             self.showMetrics(epochs)
         
+        if self.VOG:
+            self.grads = np.stack(self.grads)
+            self.VOG = self.computeVOG()
+
+        
+        
+    def computeVOG(self):
+        mean = np.mean(self.grads, axis=0)
+        varience = np.var(self.grads, axis=0)
+        VOG = np.mean(varience, axis=1)
+        return VOG
         
     def showMetrics(self, epochs:int):
         epochs = np.arange(epochs)
@@ -144,51 +165,7 @@ class LogisticModel:
 
 
 
-def regressionGraph(x1, x2, ss):
-    
-    #x1 is accuracy
-    x1 = np.array(x1).reshape(-1, 1)
-    x2 = np.array(x2)
-    
-    model = LinearRegression()
-    model.fit(x1,x2)
-    
 
-    # Predict values
-    x1_pred = np.linspace(min(x1), max(x1), 100).reshape(-1, 1)
-    x2_pred = model.predict(x1_pred)
-
-    # Compute Pearson correlation coefficient
-    r, _ = pearsonr(x1.flatten(), x2)
-
-    # Get slope and intercept
-    slope = model.coef_[0]
-    intercept = model.intercept_
-    # Plot the data and the regression line
-    plt.figure(figsize=(8, 6))
-    plt.scatter(x1, x2, color='blue', label='Data points')
-    plt.plot(x1_pred, x2_pred, color='red', linestyle='--', label='Regression line')
-
-    # Annotate Pearson correlation coefficient, slope, and intercept inside the plot area
-    plt.annotate(f'Pearson r = {r:.2f}\nSlope = {slope:.2f}\nIntercept = {intercept:.2f}', 
-                 xy=(0.1, 0.9), 
-                 xycoords='axes fraction', 
-                 fontsize=14, 
-                 ha='left', 
-                 va='top', 
-                 color='red',
-                 bbox=dict(facecolor='white', alpha=0.5, edgecolor='none'))
-    
-    
-    # Add labels and title
-    plt.xlabel('Group Accuracy')
-    plt.ylabel('Group GA error')
-    plt.title(" Accuracy vs. GA error (" + ss + " set)")
-    plt.legend()
-    plt.grid(True)
-
-    # Show the plot
-    plt.show()
 
 def train_adult():
     X_train, Y_train, X_test, Y_test = unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
@@ -199,9 +176,8 @@ def train_adult():
     X_test = encoder.transform(X_test).toarray()
 
 
-    model = LogisticModel(128)
-    model.fit(X_train, Y_train, X_test, Y_test, 200, .01, showMetrics=False)
-    
+    model = LogisticModel(128, VOG=False)
+    model.fit(X_train, Y_train, X_test, Y_test, 2, .01, showMetrics=False)
     metrics = model.metrics
     #print(metrics)
     
@@ -212,8 +188,13 @@ def train_adult():
     x2_late = []
     
     
-    epoch_early = 25
+    epoch_early = 50
     epoch_late = 199
+    
+    for i in X_train.T:
+        slice_idxs = np.where(i == 1)[0]
+        VOGs = VOG[slice_idxs]
+        
     for i in metrics["train"].keys():
         if "acc" in i and i != "avg_acc":
             x1_early.append(metrics["train"][i][epoch_early])
@@ -227,13 +208,54 @@ def train_adult():
             
             
                    
-    regressionGraph(x1_early, x2_early, "train early")
-    regressionGraph(x1_late, x2_late, "train late")
+    cmap = regressionGraph(x1_early, x2_early, "train early")
+    regressionGraph(x1_late, x2_late, "train late", c_list=cmap)
     
+    
+    
+def VOGvGA():
+    X_train, Y_train, X_test, Y_test = unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
+
+    encoder = OneHotEncoder()
+    encoder.fit(X_train)
+    X_train = encoder.transform(X_train).toarray()
+    X_test = encoder.transform(X_test).toarray()
+    model = LogisticModel(128, VOG=True)
+    model.fit(X_train, Y_train, X_test, Y_test, 200, .01, showMetrics=False)
+    
+    VOG = model.VOG
+    VOGs = []
+    for i in X_train.T:
+        slice_idxs = np.where(i == 1)[0]
+        VOGs.append(np.mean(VOG[slice_idxs]))
+
+
+    metrics = model.metrics
+    accs_early = [] 
+    accs_late = []
+    for i in metrics["train"].keys():
+        if "acc" in i and i != "avg_acc":
+            accs_early.append(metrics["train"][i][49])
+            accs_late.append(metrics["train"][i][199])
+            
+     
+    gas_early = []   
+    gas_late = []    
+    for i in metrics["train"].keys():
+        if "ga" in i:
+            gas_early.append(metrics["train"][i][49])
+            gas_late.append(metrics["train"][i][199])
+
+            
+    colors1 = regressionGraph(VOGs, accs_early, "50", xlab="Slice VOG", ylab="slice accuracy")
+    colors2 = regressionGraph(VOGs, gas_early, "50", xlab="Slice VOG", ylab = "Slice GA error")
+    
+    regressionGraph(VOGs, accs_early, "200", c_list=colors1, xlab="Slice VOG", ylab="slice accuracy")
+    regressionGraph(VOGs, gas_early, "200", c_list=colors2, xlab="Slice VOG", ylab = "Slice GA error")
+
     
     
 
 
-
     
-train_adult()
+VOGvGA()

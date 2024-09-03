@@ -41,51 +41,6 @@ class QuickPlot:
         
 
 
-def regressionGraph(x1, x2, groupName, ss):
-    
-    #x1 is accuracy
-    x1 = np.array(x1).reshape(-1, 1)
-    x2 = np.array(x2)
-    
-    model = LinearRegression()
-    model.fit(x1,x2)
-    
-
-    # Predict values
-    x1_pred = np.linspace(min(x1), max(x1), 100).reshape(-1, 1)
-    x2_pred = model.predict(x1_pred)
-
-    # Compute Pearson correlation coefficient
-    r, _ = pearsonr(x1.flatten(), x2)
-
-    # Get slope and intercept
-    slope = model.coef_[0]
-    intercept = model.intercept_
-    # Plot the data and the regression line
-    plt.figure(figsize=(8, 6))
-    plt.scatter(x1, x2, color='blue', label='Data points')
-    plt.plot(x1_pred, x2_pred, color='red', linestyle='--', label='Regression line')
-
-    # Annotate Pearson correlation coefficient, slope, and intercept inside the plot area
-    plt.annotate(f'Pearson r = {r:.2f}\nSlope = {slope:.2f}\nIntercept = {intercept:.2f}', 
-                 xy=(0.1, 0.9), 
-                 xycoords='axes fraction', 
-                 fontsize=14, 
-                 ha='left', 
-                 va='top', 
-                 color='red',
-                 bbox=dict(facecolor='white', alpha=0.5, edgecolor='none'))
-    
-    
-    # Add labels and title
-    plt.xlabel('Group Accuracy')
-    plt.ylabel('Group GA error')
-    plt.title(groupName + " Accuracy vs. GA error (" + ss + " set)")
-    plt.legend()
-    plt.grid(True)
-
-    # Show the plot
-    plt.show()
 
     
           
@@ -413,5 +368,65 @@ def is_one_hot(column):
     unique_vals = np.unique(column)
     return set(unique_vals).issubset({0,1})
 
+
+
+
+def regressionGraph(x1, x2, ss, c_list=None, xlab="", ylab=""):
     
+    #x1 is accuracy
+    x1 = np.array(x1).reshape(-1, 1)
+    x2 = np.array(x2)
+    
+    model = LinearRegression()
+    model.fit(x1,x2)
+    
+
+    # Predict values
+    x1_pred = np.linspace(min(x1), max(x1), 100).reshape(-1, 1)
+    x2_pred = model.predict(x1_pred)
+
+    # Compute Pearson correlation coefficient
+    r, _ = pearsonr(x1.flatten(), x2)
+
+    # Get slope and intercept
+    slope = model.coef_[0]
+    intercept = model.intercept_
+    # Plot the data and the regression line
+    
+    if c_list == None:
+        cmap = plt.get_cmap('viridis')
+        plt.figure(figsize=(8, 6))
+        scatter = plt.scatter(x1, x2, c=x2, label='Slice', cmap=cmap, s=50)
+    
+        c_list = []
+        colors = scatter.to_rgba(x2)
+        for i, color in enumerate(colors):
+            c_list.append(color)
+    
+    else:
+        plt.scatter(x1, x2, c=c_list, label='Slice')
+        
+    plt.plot(x1_pred, x2_pred, color='red', linestyle='--', label='Regression line')
+
+    # Annotate Pearson correlation coefficient, slope, and intercept inside the plot area
+    plt.annotate(f'Pearson r = {r:.2f}\nSlope = {slope:.2f}\nIntercept = {intercept:.2f}', 
+                 xy=(0.1, 0.9), 
+                 xycoords='axes fraction', 
+                 fontsize=14, 
+                 ha='left', 
+                 va='top', 
+                 color='red',
+                 bbox=dict(facecolor='white', alpha=0.5, edgecolor='none'))
+
+    # Add labels and title
+    plt.xlabel(xlab)
+    plt.ylabel(ylab)
+    plt.title( xlab + " vs. " + ylab + " epoch " + ss)
+    plt.legend()
+    plt.grid(True)
+
+    # Show the plot
+    plt.show()
+    return c_list
+
 
