@@ -202,7 +202,7 @@ class Trainer:
             self.metrics["train"]["point vogs"] = self.VOG.get_VOGs()
             print(self.metrics["train"]["point vogs"].shape)
             self.metrics["train"]["point GA"] = self.get_GA_errors()
-            self.make_plots()
+            #self.make_plots()
          
     def get_GA_errors(self):
         per_slice_GA = []
@@ -257,7 +257,7 @@ def test():
         
 
         params = {
-            "epochs" : 200,
+            "epochs" : 30,
             "lr" : 0.001,
             "weight decay" : 1e-5
         }
