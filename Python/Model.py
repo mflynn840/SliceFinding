@@ -1,16 +1,12 @@
 import numpy as np
 from Dataset import Dataset, DataLoader
-from utils import QuickPlot, prepAdult, getMetrics, unpickleDataset
-from sklearn.metrics import accuracy_score
+from utils import QuickPlot, getMetrics, unpickleDataset
+
 import numpy.linalg as linalg
-import pickle as pkl
-from scipy.stats import pearsonr
-from sklearn.linear_model import LinearRegression
+
 from utils import regressionGraph
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import OneHotEncoder
-
-import matplotlib.pyplot as plt
 
 
 
@@ -212,50 +208,3 @@ def train_adult():
     regressionGraph(x1_late, x2_late, "train late", c_list=cmap)
     
     
-    
-def VOGvGA():
-    X_train, Y_train, X_test, Y_test = unpickleDataset("./Data/Adult/train.pkl", "./Data/Adult/test.pkl")
-
-    encoder = OneHotEncoder()
-    encoder.fit(X_train)
-    X_train = encoder.transform(X_train).toarray()
-    X_test = encoder.transform(X_test).toarray()
-    model = LogisticModel(128, VOG=True)
-    model.fit(X_train, Y_train, X_test, Y_test, 200, .01, showMetrics=False)
-    
-    VOG = model.VOG
-    VOGs = []
-    for i in X_train.T:
-        slice_idxs = np.where(i == 1)[0]
-        VOGs.append(np.mean(VOG[slice_idxs]))
-
-
-    metrics = model.metrics
-    accs_early = [] 
-    accs_late = []
-    for i in metrics["train"].keys():
-        if "acc" in i and i != "avg_acc":
-            accs_early.append(metrics["train"][i][49])
-            accs_late.append(metrics["train"][i][199])
-            
-     
-    gas_early = []   
-    gas_late = []    
-    for i in metrics["train"].keys():
-        if "ga" in i:
-            gas_early.append(metrics["train"][i][49])
-            gas_late.append(metrics["train"][i][199])
-
-            
-    colors1 = regressionGraph(VOGs, accs_early, "50", xlab="Slice VOG", ylab="slice accuracy")
-    colors2 = regressionGraph(VOGs, gas_early, "50", xlab="Slice VOG", ylab = "Slice GA error")
-    
-    regressionGraph(VOGs, accs_early, "200", c_list=colors1, xlab="Slice VOG", ylab="slice accuracy")
-    regressionGraph(VOGs, gas_early, "200", c_list=colors2, xlab="Slice VOG", ylab = "Slice GA error")
-
-    
-    
-
-
-    
-VOGvGA()

@@ -287,6 +287,7 @@ class SliceFinder(ABC):
     
 
     def getCounts(self, v, bins):
+        # print(type(v))
         """
         Summary:
             - Count bins for an integer or vector.
@@ -304,7 +305,7 @@ class SliceFinder(ABC):
         """            
         
         
-        if type(v) is np.int64:
+        if type(v) is np.int64 or type(v) is np.int32:
             vec = np.zeros((bins))
             vec[v] = 1
             return vec
@@ -385,6 +386,7 @@ class SliceFinder(ABC):
 
         #slice scores
         sc = self.score(ss, se, self.n)
+        print("scores: " + str(sc))
 
         
         #form statistics matrix

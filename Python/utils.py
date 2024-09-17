@@ -329,6 +329,12 @@ def getMetrics(X_train, Y_train, X_test, Y_test, model, metrics=None, last=False
                     metrics[ss]["group" + str(count) + "_ga"].append(group_ga)
                     
                 count += 1
+        
+        avg_acc = np.sum(cur_preds == cur_truths)/cur_dat.shape[0]
+        if "avg_acc" not in metrics[ss].keys():
+            metrics[ss]["avg_acc"] = [avg_acc]
+        else:
+            metrics[ss]["avg_acc"].append(avg_acc)
             
 
 
@@ -371,7 +377,7 @@ def is_one_hot(column):
 
 
 
-def regressionGraph(x1, x2, ss, c_list=None, xlab="", ylab=""):
+def regressionGraph(x1, x2, ss, c_list=None, xlab="", ylab="", show=True):
     
     #x1 is accuracy
     x1 = np.array(x1).reshape(-1, 1)
@@ -426,7 +432,9 @@ def regressionGraph(x1, x2, ss, c_list=None, xlab="", ylab=""):
     plt.grid(True)
 
     # Show the plot
-    plt.show()
-    return c_list
+    
+    if show:
+        plt.show()
+    return c_list, r
 
 
