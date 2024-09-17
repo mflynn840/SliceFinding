@@ -74,7 +74,11 @@ class SimpleNN(nn.Module):
         return x
     
     def getGAError(model, X1, X2, Y1, Y2):
-        
+        device = "cuda:0"
+        X1 = X1.to(device)
+        X2 = X2.to(device)
+        Y1 = Y1.to(device, non_blocking=True)
+        Y2 = Y2.to(device, non_blocking=True)
         model.train()
         model.zero_grad()
         X1.requires_grad_(True)
@@ -90,16 +94,15 @@ class SimpleNN(nn.Module):
         
         
         loss1.backward()
-        X1_grads = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}
+        X1_grads = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}["hidden2.weight"]
         
         model.zero_grad()
         
         loss2.backward()
-        X2_grads = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}
+        X2_grads = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}["hidden2.weight"]
 
-        print(X1_grads)
-        
-        
+        norm = torch.norm(X1_grads - X2_grads, p='fro')
+        return norm
         
 
 class AdultDataset(Dataset):
@@ -122,7 +125,8 @@ class AdultDataset(Dataset):
 
 
 class Trainer:
-    def __init__(self, trainSet: Dataset, testSet: Dataset, model: nn.Module, params:dict, seed=1, VOG=True, checkpointFreq = 1):
+    def __init__(self, trainSet: Dataset, testSet: Dataset, model: SimpleNN, params:dict, seed=1, VOG=True, checkpointFreq = 1):
+        self.trainSet = trainSet
         set_seed(seed)
         self.model = model
         self.params = params
@@ -197,8 +201,20 @@ class Trainer:
                 
             self.metrics["train"]["point vogs"] = self.VOG.get_VOGs()
             print(self.metrics["train"]["point vogs"].shape)
+            self.metrics["train"]["point GA"] = self.get_GA_errors()
             self.make_plots()
          
+    def get_GA_errors(self):
+        per_slice_GA = []
+        ts = self.trainSet
+        #get each one predicate slice
+        for i in self.trainSet.X.T:
+            slice_idxs = np.where(i == 1)[0]
+            slice_ga = self.model.getGAError(ts.X, ts.X[slice_idxs], ts.Y, ts.Y[slice_idxs])
+            per_slice_GA.append(slice_ga.item())
+           
+        print(per_slice_GA) 
+        return per_slice_GA
     def make_plots(self):
         
         epochs = np.arange(self.params["epochs"])
@@ -227,23 +243,38 @@ class Trainer:
 
 
 def test():
-    train_set = AdultDataset("./Data/Adult/train.pkl")
-    test_set = AdultDataset("./Data/Adult/test.pkl")
-    encoder = OneHotEncoder(sparse_output=False)
-    encoder.fit(train_set.X)
-    train_set.X = torch.tensor(encoder.transform(train_set.X), dtype=torch.float32)
-    test_set.X = torch.tensor(encoder.transform(test_set.X), dtype=torch.float32)
     
+    seeds = [random.randint(0, 10000000) for _ in range(10)]
+    for i in range(10):
+        seed = seeds[i]
+        
+        train_set = AdultDataset("./Data/Adult/train.pkl")
+        test_set = AdultDataset("./Data/Adult/test.pkl")
+        encoder = OneHotEncoder(sparse_output=False)
+        encoder.fit(train_set.X)
+        train_set.X = torch.tensor(encoder.transform(train_set.X), dtype=torch.float32)
+        test_set.X = torch.tensor(encoder.transform(test_set.X), dtype=torch.float32)
+        
 
-    params = {
-        "epochs" : 2,
-        "lr" : 0.001,
-        "weight decay" : 1e-5
-    }
+        params = {
+            "epochs" : 200,
+            "lr" : 0.001,
+            "weight decay" : 1e-5
+        }
+        
+        model = SimpleNN(128, 50, 2)
+        trainer = Trainer(train_set, test_set, model, params,seed=seed)
+        trainer.train()
+        
+        
+        with open("./metrics/" + str(seed) + "metrics.pkl", 'wb') as file:
+            pkl.dump(trainer.metrics, file)
+        
+        with open("./metrics/" + str(seed) + "metrics.pkl", 'rb') as file:
+            metrics = pkl.load(file)
+            print(metrics)
+        
     
-    model = SimpleNN(128, 50, 2)
-    trainer = Trainer(train_set, test_set, model, params)
-    trainer.train()
     
     
 if __name__ == "__main__":
