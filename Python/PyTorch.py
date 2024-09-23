@@ -8,7 +8,7 @@ from sklearn.preprocessing import OneHotEncoder
 from utils import QuickPlot, get_slice_idxs
 import torch.profiler
 from math import sqrt, floor
-
+import torch.nn.functional as F
 
 
 class RunningVOG:
@@ -30,12 +30,22 @@ class RunningVOG:
 
     def get_varience(self):
         if self.n >1:
-            return self.m2 / (sqrt(self.n))
+            return self.m2 / (self.n-1)
     
     def get_VOGs(self):
         varience = self.get_varience()
         VOG = (1/self.shape[1]) * torch.sum(varience, 1)
         return VOG
+    
+    def get_slice_VOGs(self, slice_idxs):
+        all_vogs = self.get_VOGs()
+        
+        slice_VOGS = []
+        for i in range(len(slice_idxs)):
+            slice_VOGS.append(torch.mean(all_vogs[slice_idxs[i]]))
+            
+        return torch.stack(slice_VOGS)
+            
 
 def init_weights(layer):
     if isinstance(layer, nn.Linear):
@@ -50,11 +60,20 @@ def set_seed(seed):
     torch.manual_seed(seed)
     
 
+class ConvexNN(nn.Module):
+    def __init__(self, inFeatures, outClasses):
+        super(ConvexNN, self).__init__()
+        self.linear = nn.Linear(inFeatures, outClasses)
+    
+    def forward(self, x):
+        return self.linear(x)
+    
+    
 class SimpleNN(nn.Module):
     
     def __init__(self, inFeatures, hiddenNeurons, classesOut):
         super(SimpleNN, self).__init__()
-        self.hidden = nn.Linear(inFeatures,hiddenNeurons)
+        self.hidden = nn.Linear(inFeatures, hiddenNeurons)
         self.hidden2 = nn.Linear(hiddenNeurons, hiddenNeurons)
         self.output = nn.Linear(hiddenNeurons,classesOut)
         self.flatten = nn.Flatten()
@@ -104,34 +123,53 @@ class SimpleNN(nn.Module):
         return np.asarray(slice_accs)
         
     
-    def getGAError(model, X1, X2, Y1, Y2):
+    def get_slice_ga_errors(model, X, Y, slice_idxs):
         device = "cuda:0"
-        X1 = X1.to(device)
-        X2 = X2.to(device)
-        Y1 = Y1.to(device, non_blocking=True)
-        Y2 = Y2.to(device, non_blocking=True)
-        model.train()
-        model.zero_grad()
-        X1.requires_grad_(True)
-        X2.requires_grad_(True)
-        
-        loss_fn = nn.CrossEntropyLoss()
-        
-        #full dataset mean gradient
-        logits1 = model(X1)
-        loss1 = loss_fn(logits1, Y1)
-        loss1.backward()
-        X1_grads = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}["hidden2.weight"]
-        model.zero_grad()
-        
-        #slice mean gradient
-        logits2 = model(X2)
-        loss2 = loss_fn(logits2, Y2)
-        loss2.backward()
-        X2_grads = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}["hidden2.weight"]
+        X = X.to(device)
+        Y = Y.to(device, non_blocking=True)
 
-        norm = torch.norm(X1_grads - X2_grads, p=2)
-        return norm
+        model.eval()
+        model.zero_grad()
+        X.requires_grad = True
+
+        #turn off gradients for all layers except for the last one to save time
+        for name, param in model.named_parameters():
+            if name != "output.weight":
+                param.require_grad = False
+            
+            
+        logits = model(X)
+        losses = F.cross_entropy(logits, Y, reduction='none')
+        
+        #get loss w.r.t weight gradient for each datapoint
+        gradients = []
+        for i in range(X.size(0)):
+
+            model.zero_grad()
+            losses[i].backward(retain_graph=True)  # retain_graph=True to allow further backward passes
+            gradients.append({name : param.grad.clone() for name, param in model.named_parameters()}["output.weight"])
+        
+        
+        #gradients[i][j][k] is gradient of loss w.r.t the jth weight of the kth output neuron for datapoint i
+        gradients = torch.stack(gradients)
+        gradients = gradients.reshape(gradients.shape[0], gradients.shape[1] * gradients.shape[2])
+        
+        avg_dset_grad = torch.mean(gradients, dim=0)
+
+        
+        GA_scores = []
+        for i in range(len(slice_idxs)):
+            GA_score = torch.norm(avg_dset_grad - torch.mean(gradients[slice_idxs[i]], dim=0), p=2)
+            GA_scores.append(GA_score)
+            
+        GA_scores = torch.stack(GA_scores)
+    
+        #turn back on gradients for all layers
+        for name, param in model.named_parameters():
+                param.require_grad = True
+            
+            
+        return GA_scores
         
 
 class AdultDataset(Dataset):
@@ -159,7 +197,7 @@ class Trainer:
         set_seed(seed)
         self.model = model
         self.params = params
-        self.train_loader = DataLoader(trainSet, batch_size=5000, num_workers=8, pin_memory=True, shuffle=True, drop_last=False)
+        self.train_loader = DataLoader(trainSet, batch_size=5000, num_workers=8, pin_memory=True, shuffle=False, drop_last=False)
         self.test_loader = DataLoader(testSet, batch_size=5000, num_workers=8, pin_memory=True)
         self.metrics = {"train": {"accuracy" : [], "loss" : []}, "test": {"accuracy" : [], "loss" : []}}
         
@@ -195,7 +233,7 @@ class Trainer:
                 loss = self.loss(logits, targets)
                 loss.backward()
                 
-                pre_softmax_activations = self.model.pre_softmax_activations(features)
+                pre_softmax_activations = self.model(features)
                 pre_softmax_activations.retain_grad()
                 
                 if epoch % self.checkpointFreq == 0:
@@ -223,9 +261,10 @@ class Trainer:
             self.update_metrics()
             print("epoch " + str(epoch) + " train accuacy=" + str(self.metrics["train"]["accuracy"][-1] ))
 
+
             
-        self.metrics["train"]["point vogs"] = self.VOG.get_VOGs()
-        self.metrics["train"]["point GA"] = self.get_GA_errors(self.slice_idxs)
+        self.metrics["train"]["slice vogs"] = self.VOG.get_slice_VOGs(self.slice_idxs)
+        self.metrics["train"]["slice GA"] = self.model.get_slice_ga_errors(self.trainSet.X, self.trainSet.Y, self.slice_idxs)
         self.metrics["train"]["slice accs"] = self.model.per_slice_accuracy(self.trainSet.X, self.trainSet.Y, self.slice_idxs)
         self.metrics["train"]["slice loss"] = self.model.per_slice_loss(self.trainSet.X, self.trainSet.Y, self.slice_idxs)
 
@@ -281,7 +320,7 @@ def test():
         
 
         params = {
-            "epochs" : 10,
+            "epochs" : 15,
             "lr" : 0.001,
             "weight decay" : 1e-5
         }

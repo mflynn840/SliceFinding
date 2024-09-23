@@ -170,7 +170,7 @@ def parseMetrics():
 def testing():
     metrics = None
     slice_idx_list = None
-    with open(os.path.join("./metrics", "5608903metrics.pkl"), 'rb') as file:
+    with open(os.path.join("./metrics", "4810211metrics.pkl"), 'rb') as file:
             metrics = pkl.load(file)
     
     with open("./Python/slice_idxs_list.pkl", 'rb') as file:
@@ -180,18 +180,11 @@ def testing():
 
 
     print(metrics["train"].keys())
+
+
+    regressionGraph(metrics["train"]["slice vogs"], metrics["train"]["slice loss"], "train", xlab="slice VOG", ylab="slice loss")
+    regressionGraph(metrics["train"]["slice GA"].cpu(), metrics["train"]["slice loss"], "train", xlab="slice GA-error", ylab="slice loss")
+    regressionGraph(metrics["train"]["slice accs"], metrics["train"]["slice loss"], "train", xlab="slice accuracy", ylab="slice loss")
+    regressionGraph(metrics["train"]["slice GA"].cpu(), metrics["train"]["slice vogs"], "train", xlab="GA error", ylab="VOG")
     
-    
-    slice_vogs = []
-
-    for i in range(len(slice_idx_list)):
-        slice_idxs = slice_idx_list[i]
-        slice_vogs.append(np.mean(metrics["train"]["point vogs"][slice_idxs].numpy()))
-
-
-
-    slice_vogs = np.asarray(slice_vogs)
-
-    regressionGraph(metrics["train"]["point GA"], slice_vogs, "train")
-
 testing()
