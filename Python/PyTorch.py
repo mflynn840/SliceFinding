@@ -5,7 +5,7 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import pickle as pkl
 from sklearn.preprocessing import OneHotEncoder
-from utils import QuickPlot
+from utils import QuickPlot, get_slice_idxs
 import torch.profiler
 from math import sqrt, floor
 
@@ -73,6 +73,37 @@ class SimpleNN(nn.Module):
         x = torch.relu(self.hidden2(x))
         return x
     
+    def per_slice_loss(model, X, Y, slice_idx_list):
+        
+        X = X.to("cuda")
+        Y = Y.to("cuda")
+        
+        loss_fn = nn.CrossEntropyLoss()
+        
+        slice_losses = []
+        with torch.no_grad():
+            for i in range(len(slice_idx_list)):
+                slice_idxs = slice_idx_list[i]
+                logits = model(X[slice_idxs])
+                slice_losses.append(loss_fn(logits, Y[slice_idxs]).item())
+        return np.asarray(slice_losses)
+    
+    def per_slice_accuracy(model, X, Y, slice_idx_list):
+        
+        X = X.to("cuda")
+        Y = Y.to("cuda")
+        
+        slice_accs = []
+        with torch.no_grad():
+            for i in range(len(slice_idx_list)):
+                slice_idxs = slice_idx_list[i]
+                logits = model(X[slice_idxs])
+                preds = torch.argmax(logits, 1)
+                slice_accs.append(((preds == Y[slice_idxs]).sum().item())/slice_idxs.shape[0])
+        
+        return np.asarray(slice_accs)
+        
+    
     def getGAError(model, X1, X2, Y1, Y2):
         device = "cuda:0"
         X1 = X1.to(device)
@@ -86,22 +117,20 @@ class SimpleNN(nn.Module):
         
         loss_fn = nn.CrossEntropyLoss()
         
+        #full dataset mean gradient
         logits1 = model(X1)
-        logits2 = model(X2)
-        
         loss1 = loss_fn(logits1, Y1)
-        loss2 = loss_fn(logits2, Y2)
-        
-        
         loss1.backward()
         X1_grads = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}["hidden2.weight"]
-        
         model.zero_grad()
         
+        #slice mean gradient
+        logits2 = model(X2)
+        loss2 = loss_fn(logits2, Y2)
         loss2.backward()
         X2_grads = {name: param.grad.clone() for name, param in model.named_parameters() if param.grad is not None}["hidden2.weight"]
 
-        norm = torch.norm(X1_grads - X2_grads, p='fro')
+        norm = torch.norm(X1_grads - X2_grads, p=2)
         return norm
         
 
@@ -134,6 +163,8 @@ class Trainer:
         self.test_loader = DataLoader(testSet, batch_size=5000, num_workers=8, pin_memory=True)
         self.metrics = {"train": {"accuracy" : [], "loss" : []}, "test": {"accuracy" : [], "loss" : []}}
         
+        self.slice_idxs = get_slice_idxs()
+
         self.loss = torch.nn.CrossEntropyLoss()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=params["lr"], weight_decay=params["weight decay"])
         self.sum_loss = torch.nn.CrossEntropyLoss(reduction='sum')
@@ -148,72 +179,65 @@ class Trainer:
         self.VOG = RunningVOG((len(trainSet), 128))
         
     def train(self):
-        
-
-        with torch.profiler.profile(
-            activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-            record_shapes=True,
-            with_stack=True
-        ) as prof:
+          
+        for epoch in range(self.params["epochs"]):
             
-            for epoch in range(self.params["epochs"]):
+            self.model.train()
+            epoch_grads = None
+            
+            for i, (features, targets) in enumerate(self.train_loader):
+                features = features.to(self.device)
+                targets = targets.to(self.device, non_blocking=True)
+                features = features.requires_grad_(True)
                 
-                self.model.train()
-                epoch_grads = None
+                self.optimizer.zero_grad()
+                logits = self.model(features)
+                loss = self.loss(logits, targets)
+                loss.backward()
                 
-                for i, (features, targets) in enumerate(self.train_loader):
-                    features = features.to(self.device)
-                    targets = targets.to(self.device, non_blocking=True)
-                    features = features.requires_grad_(True)
-                    
-                    self.optimizer.zero_grad()
-                    logits = self.model(features)
-                    loss = self.loss(logits, targets)
-                    loss.backward()
-                    
-                    pre_softmax_activations = self.model.pre_softmax_activations(features)
-                    pre_softmax_activations.retain_grad()
-                    
-                    if epoch % self.checkpointFreq == 0:
-                        activation_grad = torch.autograd.grad(
-                            outputs=pre_softmax_activations,
-                            inputs=features,
-                            grad_outputs=torch.ones_like(pre_softmax_activations),  
-                            create_graph=False,
-                            allow_unused=True
-                        )[0]
-
-                        if activation_grad is not None:
-                            activation_grad = activation_grad.cpu()
-                            if epoch_grads is None:
-                                epoch_grads = activation_grad
-                            else:
-                                epoch_grads = torch.cat((epoch_grads, activation_grad), dim=0)
-                    
-                    self.optimizer.step()
+                pre_softmax_activations = self.model.pre_softmax_activations(features)
+                pre_softmax_activations.retain_grad()
                 
                 if epoch % self.checkpointFreq == 0:
-                    self.VOG.update(epoch_grads)
-                    
-                self.model.eval()
-                self.update_metrics()
-                print("epoch " + str(epoch) + " train accuacy=" + str(self.metrics["train"]["accuracy"][-1] ))
+                    activation_grad = torch.autograd.grad(
+                        outputs=pre_softmax_activations,
+                        inputs=features,
+                        grad_outputs=torch.ones_like(pre_softmax_activations),  
+                        create_graph=False,
+                        allow_unused=True
+                    )[0]
+
+                    if activation_grad is not None:
+                        activation_grad = activation_grad.cpu()
+                        if epoch_grads is None:
+                            epoch_grads = activation_grad
+                        else:
+                            epoch_grads = torch.cat((epoch_grads, activation_grad), dim=0)
                 
-            self.metrics["train"]["point vogs"] = self.VOG.get_VOGs()
-            print(self.metrics["train"]["point vogs"].shape)
-            self.metrics["train"]["point GA"] = self.get_GA_errors()
-            #self.make_plots()
-         
-    def get_GA_errors(self):
+                self.optimizer.step()
+            
+            if epoch % self.checkpointFreq == 0:
+                self.VOG.update(epoch_grads)
+                
+            self.model.eval()
+            self.update_metrics()
+            print("epoch " + str(epoch) + " train accuacy=" + str(self.metrics["train"]["accuracy"][-1] ))
+
+            
+        self.metrics["train"]["point vogs"] = self.VOG.get_VOGs()
+        self.metrics["train"]["point GA"] = self.get_GA_errors(self.slice_idxs)
+        self.metrics["train"]["slice accs"] = self.model.per_slice_accuracy(self.trainSet.X, self.trainSet.Y, self.slice_idxs)
+        self.metrics["train"]["slice loss"] = self.model.per_slice_loss(self.trainSet.X, self.trainSet.Y, self.slice_idxs)
+
+    def get_GA_errors(self, slice_idxs_list):
         per_slice_GA = []
         ts = self.trainSet
         #get each one predicate slice
-        for i in self.trainSet.X.T:
-            slice_idxs = np.where(i == 1)[0]
+        for i in range(len(slice_idxs_list)):
+            slice_idxs = slice_idxs_list[i]
             slice_ga = self.model.getGAError(ts.X, ts.X[slice_idxs], ts.Y, ts.Y[slice_idxs])
             per_slice_GA.append(slice_ga.item())
            
-        print(per_slice_GA) 
         return per_slice_GA
     def make_plots(self):
         
@@ -257,7 +281,7 @@ def test():
         
 
         params = {
-            "epochs" : 30,
+            "epochs" : 10,
             "lr" : 0.001,
             "weight decay" : 1e-5
         }

@@ -163,5 +163,35 @@ def parseMetrics():
     plt.xticks(ticks=np.arange(0, num_slices, 10), labels=np.arange(0, num_slices, 10))
     plt.show()
     
-parseMetrics()
+#parseMetrics()
     
+    
+    
+def testing():
+    metrics = None
+    slice_idx_list = None
+    with open(os.path.join("./metrics", "5608903metrics.pkl"), 'rb') as file:
+            metrics = pkl.load(file)
+    
+    with open("./Python/slice_idxs_list.pkl", 'rb') as file:
+        slice_idx_list = pkl.load(file)
+        
+
+
+
+    print(metrics["train"].keys())
+    
+    
+    slice_vogs = []
+
+    for i in range(len(slice_idx_list)):
+        slice_idxs = slice_idx_list[i]
+        slice_vogs.append(np.mean(metrics["train"]["point vogs"][slice_idxs].numpy()))
+
+
+
+    slice_vogs = np.asarray(slice_vogs)
+
+    regressionGraph(metrics["train"]["point GA"], slice_vogs, "train")
+
+testing()

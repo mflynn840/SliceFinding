@@ -438,3 +438,7 @@ def regressionGraph(x1, x2, ss, c_list=None, xlab="", ylab="", show=True):
     return c_list, r
 
 
+def get_slice_idxs():
+    with open("./Python/slice_idxs_list.pkl", 'rb') as file:
+        return pkl.load(file)
+
