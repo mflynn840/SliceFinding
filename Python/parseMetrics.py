@@ -88,8 +88,6 @@ def regressionGrid(x1, x2, ss, c_list=None, xlab="", ylab="", show=True):
 def parseMetrics():
     model_runs = {}
     for fname in os.listdir("./metrics"):
-        
-        
         with open(os.path.join("./metrics", fname), 'rb') as file:
             model_runs[fname] = pkl.load(file)
             
@@ -170,14 +168,12 @@ def parseMetrics():
 def testing():
     metrics = None
     slice_idx_list = None
-    with open(os.path.join("./metrics", "4810211metrics.pkl"), 'rb') as file:
+    with open(os.path.join("./metrics", "1730927metrics.pkl"), 'rb') as file:
             metrics = pkl.load(file)
     
     with open("./Python/slice_idxs_list.pkl", 'rb') as file:
         slice_idx_list = pkl.load(file)
         
-
-
 
     print(metrics["train"].keys())
 

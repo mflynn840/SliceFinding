@@ -11,7 +11,10 @@ from math import sqrt, floor
 import torch.nn.functional as F
 
 
+
+
 class RunningVOG:
+
     def __init__(self, shape):
         self.shape = shape
         self.n = 0
@@ -130,44 +133,45 @@ class SimpleNN(nn.Module):
 
         model.eval()
         model.zero_grad()
-        X.requires_grad = True
 
-        #turn off gradients for all layers except for the last one to save time
+        #turn off gradients for some layers for faster compute 
         for name, param in model.named_parameters():
-            if name != "output.weight":
+            if name != "output.weight" and name != "hidden2.weight":
                 param.require_grad = False
-            
-            
         logits = model(X)
         losses = F.cross_entropy(logits, Y, reduction='none')
         
         #get loss w.r.t weight gradient for each datapoint
-        gradients = []
+        point_grads = []
         for i in range(X.size(0)):
 
             model.zero_grad()
-            losses[i].backward(retain_graph=True)  # retain_graph=True to allow further backward passes
-            gradients.append({name : param.grad.clone() for name, param in model.named_parameters()}["output.weight"])
-        
-        
-        #gradients[i][j][k] is gradient of loss w.r.t the jth weight of the kth output neuron for datapoint i
-        gradients = torch.stack(gradients)
-        gradients = gradients.reshape(gradients.shape[0], gradients.shape[1] * gradients.shape[2])
-        
-        avg_dset_grad = torch.mean(gradients, dim=0)
+            
+            layer_grads = []
+            losses[i].backward(retain_graph=True)
+            for name, param in model.named_parameters():
+                if name == "output.weight" or name == "hidden2.weight":
+                    layer_grad_i = param.grad.clone()
+                    layer_grads.append(layer_grad_i.flatten())
+
+            point_grads.append(torch.hstack(layer_grads))
 
         
+        #gradients[i][j][k] is gradient of loss w.r.t the jth weight of the kth output unit for datapoint i
+        point_grads = torch.stack(point_grads)
+        print(point_grads.shape)
+        avg_dset_grad = torch.mean(point_grads, dim=0)
+
         GA_scores = []
         for i in range(len(slice_idxs)):
-            GA_score = torch.norm(avg_dset_grad - torch.mean(gradients[slice_idxs[i]], dim=0), p=2)
+            GA_score = torch.norm(avg_dset_grad - torch.mean(point_grads[slice_idxs[i]], dim=0), p=2)
             GA_scores.append(GA_score)
             
         GA_scores = torch.stack(GA_scores)
     
         #turn back on gradients for all layers
         for name, param in model.named_parameters():
-                param.require_grad = True
-            
+            param.require_grad = True
             
         return GA_scores
         
@@ -217,7 +221,7 @@ class Trainer:
         self.VOG = RunningVOG((len(trainSet), 128))
         
     def train(self):
-          
+
         for epoch in range(self.params["epochs"]):
             
             self.model.train()
@@ -268,16 +272,7 @@ class Trainer:
         self.metrics["train"]["slice accs"] = self.model.per_slice_accuracy(self.trainSet.X, self.trainSet.Y, self.slice_idxs)
         self.metrics["train"]["slice loss"] = self.model.per_slice_loss(self.trainSet.X, self.trainSet.Y, self.slice_idxs)
 
-    def get_GA_errors(self, slice_idxs_list):
-        per_slice_GA = []
-        ts = self.trainSet
-        #get each one predicate slice
-        for i in range(len(slice_idxs_list)):
-            slice_idxs = slice_idxs_list[i]
-            slice_ga = self.model.getGAError(ts.X, ts.X[slice_idxs], ts.Y, ts.Y[slice_idxs])
-            per_slice_GA.append(slice_ga.item())
-           
-        return per_slice_GA
+
     def make_plots(self):
         
         epochs = np.arange(self.params["epochs"])
@@ -326,7 +321,7 @@ def test():
         }
         
         model = SimpleNN(128, 50, 2)
-        trainer = Trainer(train_set, test_set, model, params,seed=seed)
+        trainer = Trainer(train_set, test_set, model, params, seed=seed)
         trainer.train()
         
         
